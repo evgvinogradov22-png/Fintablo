@@ -446,17 +446,136 @@ export default function BudgetSystem() {
     return items;
   };
 
-  const Row = ({ item, type, onDone, onUpdate, onRemove, color }) => (
+  // Пропустить платёж — переносит в долги
+  const skipPayment = (type, item) => {
+    const newData = JSON.parse(JSON.stringify(data));
+    if (!newData.months[selectedMonth].debts) newData.months[selectedMonth].debts = [];
+    
+    const { year, month: m } = parseMonthKey(selectedMonth);
+    const debtName = `${item.name} (просрочка ${item.day} ${MONTHS_SHORT[m - 1]})`;
+    
+    newData.months[selectedMonth].debts.push({
+      id: Date.now(),
+      name: debtName,
+      amount: item.amount,
+      day: item.day,
+      originalType: type
+    });
+    
+    // Удаляем из плана
+    const listType = type === 'expense' ? 'expenses' : type === 'debt' ? 'debts' : 'income';
+    newData.months[selectedMonth][listType] = newData.months[selectedMonth][listType].filter(i => i.id !== item.id);
+    
+    save(newData);
+  };
+
+  const skipCreditPayment = (credit) => {
+    const newData = JSON.parse(JSON.stringify(data));
+    if (!newData.months[selectedMonth]) newData.months[selectedMonth] = { income: [], expenses: [], debts: [] };
+    if (!newData.months[selectedMonth].debts) newData.months[selectedMonth].debts = [];
+    
+    const { month: m } = parseMonthKey(selectedMonth);
+    const debtName = `${credit.name} (просрочка ${credit.day} ${MONTHS_SHORT[m - 1]})`;
+    
+    newData.months[selectedMonth].debts.push({
+      id: Date.now(),
+      name: debtName,
+      amount: credit.monthlyPayment,
+      day: credit.day,
+      originalType: 'credit',
+      creditId: credit.id
+    });
+    
+    if (!newData.skippedCredits) newData.skippedCredits = {};
+    if (!newData.skippedCredits[selectedMonth]) newData.skippedCredits[selectedMonth] = [];
+    newData.skippedCredits[selectedMonth].push(credit.id);
+    
+    save(newData);
+  };
+
+  const skipEmployeePayment = (emp, payNum) => {
+    const newData = JSON.parse(JSON.stringify(data));
+    if (!newData.months[selectedMonth]) newData.months[selectedMonth] = { income: [], expenses: [], debts: [] };
+    if (!newData.months[selectedMonth].debts) newData.months[selectedMonth].debts = [];
+    
+    const day = payNum === 1 ? data.fotSettings.payDay1 : data.fotSettings.payDay2;
+    const amount = payNum === 1 ? emp.pay1 : emp.pay2;
+    const { month: m } = parseMonthKey(selectedMonth);
+    
+    newData.months[selectedMonth].debts.push({
+      id: Date.now(),
+      name: `${emp.name} ЗП (просрочка ${day} ${MONTHS_SHORT[m - 1]})`,
+      amount,
+      day,
+      originalType: 'salary',
+      employeeId: emp.id,
+      payNum
+    });
+    
+    if (!newData.skippedSalaries) newData.skippedSalaries = {};
+    if (!newData.skippedSalaries[selectedMonth]) newData.skippedSalaries[selectedMonth] = {};
+    if (!newData.skippedSalaries[selectedMonth][emp.id]) newData.skippedSalaries[selectedMonth][emp.id] = {};
+    newData.skippedSalaries[selectedMonth][emp.id][`pay${payNum}`] = true;
+    
+    save(newData);
+  };
+
+  const isCreditSkipped = (creditId) => data.skippedCredits?.[selectedMonth]?.includes(creditId);
+  const isEmployeeSkipped = (empId, payNum) => data.skippedSalaries?.[selectedMonth]?.[empId]?.[`pay${payNum}`];
+
+  // Компонент инпута с локальным стейтом - сохраняет при потере фокуса
+  const EditableInput = ({ value, onSave, type = 'text', className, ...props }) => {
+    const [localValue, setLocalValue] = useState(value);
+    const [focused, setFocused] = useState(false);
+    
+    useEffect(() => {
+      if (!focused) setLocalValue(value);
+    }, [value, focused]);
+    
+    return (
+      <input
+        type={type}
+        value={localValue}
+        onChange={(e) => setLocalValue(e.target.value)}
+        onFocus={() => setFocused(true)}
+        onBlur={() => { setFocused(false); onSave(localValue); }}
+        onKeyDown={(e) => { if (e.key === 'Enter') e.target.blur(); }}
+        className={className}
+        {...props}
+      />
+    );
+  };
+
+  const Row = ({ item, type, onDone, onSkip, onUpdate, onRemove, color }) => (
     <div className="flex items-center gap-2 py-2.5 border-b border-neutral-100 last:border-0 group">
-      <button onClick={onDone} className="w-5 h-5 rounded border-2 border-neutral-300 hover:border-emerald-400 hover:bg-emerald-50 flex items-center justify-center transition-all flex-shrink-0">
-        <Check size={12} className="text-neutral-300 group-hover:text-emerald-500" />
+      <button onClick={onDone} className="w-5 h-5 rounded border-2 border-emerald-300 hover:border-emerald-500 hover:bg-emerald-50 flex items-center justify-center transition-all flex-shrink-0" title="Оплачено">
+        <Check size={12} className="text-emerald-400 group-hover:text-emerald-600" />
+      </button>
+      <button onClick={onSkip} className="w-5 h-5 rounded border-2 border-orange-300 hover:border-orange-500 hover:bg-orange-50 flex items-center justify-center transition-all flex-shrink-0 text-[10px] font-bold text-orange-400 hover:text-orange-600" title="Пропустить → в долг">
+        ✕
       </button>
       <div className="w-16 flex-shrink-0">
-        <input type="number" value={item.day} onChange={(e) => onUpdate('day', e.target.value)} className="w-8 text-center text-sm bg-neutral-100 rounded px-1 py-0.5 text-neutral-600 focus:outline-none" min="1" max="31" />
+        <EditableInput 
+          type="number" 
+          value={item.day} 
+          onSave={(v) => onUpdate('day', v)} 
+          className="w-8 text-center text-sm bg-neutral-100 rounded px-1 py-0.5 text-neutral-600 focus:outline-none focus:ring-2 focus:ring-blue-300" 
+          min="1" 
+          max="31" 
+        />
         <span className="text-xs text-neutral-400 ml-1">{MONTHS_SHORT[month - 1]}</span>
       </div>
-      <input type="text" value={item.name} onChange={(e) => onUpdate('name', e.target.value)} placeholder="Название" className="flex-1 bg-transparent focus:outline-none min-w-0 text-neutral-700" />
-      <input type="number" value={item.amount} onChange={(e) => onUpdate('amount', e.target.value)} className={`w-28 text-right bg-transparent focus:outline-none font-medium flex-shrink-0 ${color}`} />
+      <EditableInput 
+        value={item.name} 
+        onSave={(v) => onUpdate('name', v)} 
+        placeholder="Название" 
+        className="flex-1 bg-transparent focus:outline-none focus:bg-neutral-50 rounded px-1 min-w-0 text-neutral-700" 
+      />
+      <EditableInput 
+        value={item.amount} 
+        onSave={(v) => onUpdate('amount', v)} 
+        className={`w-28 text-right bg-transparent focus:outline-none focus:bg-neutral-50 rounded px-1 font-medium flex-shrink-0 ${color}`} 
+      />
       <button onClick={onRemove} className="text-neutral-200 group-hover:text-neutral-400 hover:!text-red-400 transition-colors p-1 flex-shrink-0">
         <Trash2 size={14} />
       </button>
@@ -478,6 +597,7 @@ export default function BudgetSystem() {
           {items.sort((a, b) => a.day - b.day).map(item => (
             <Row key={item.id} item={item} type={type} color={textColor}
               onDone={() => markDone(type, item)}
+              onSkip={() => skipPayment(type, item)}
               onUpdate={(field, value) => update(type, item.id, field, value)}
               onRemove={() => remove(type, item.id)}
             />
@@ -623,10 +743,13 @@ export default function BudgetSystem() {
                 <span className="text-sm font-medium text-rose-600">{fmt(planCredits)}</span>
               </div>
               <div className="px-4 py-1">
-                {data.credits.filter(c => !isCreditPaid(c.id)).sort((a, b) => a.day - b.day).map(credit => (
+                {data.credits.filter(c => !isCreditPaid(c.id) && !isCreditSkipped(c.id)).sort((a, b) => a.day - b.day).map(credit => (
                   <div key={credit.id} className="flex items-center gap-2 py-2.5 border-b border-neutral-100 last:border-0 group">
-                    <button onClick={() => markCreditDone(credit)} className="w-5 h-5 rounded border-2 border-neutral-300 hover:border-emerald-400 hover:bg-emerald-50 flex items-center justify-center transition-all flex-shrink-0">
-                      <Check size={12} className="text-neutral-300 group-hover:text-emerald-500" />
+                    <button onClick={() => markCreditDone(credit)} className="w-5 h-5 rounded border-2 border-emerald-300 hover:border-emerald-500 hover:bg-emerald-50 flex items-center justify-center transition-all flex-shrink-0" title="Оплачено">
+                      <Check size={12} className="text-emerald-400 group-hover:text-emerald-600" />
+                    </button>
+                    <button onClick={() => skipCreditPayment(credit)} className="w-5 h-5 rounded border-2 border-orange-300 hover:border-orange-500 hover:bg-orange-50 flex items-center justify-center transition-all flex-shrink-0 text-[10px] font-bold text-orange-400 hover:text-orange-600" title="Пропустить → в долг">
+                      ✕
                     </button>
                     <div className="w-16 flex-shrink-0">
                       <span className="text-sm text-neutral-600">{String(credit.day).padStart(2, '0')}</span>
@@ -670,22 +793,44 @@ export default function BudgetSystem() {
                 {data.employees.map(emp => {
                   const paid1 = isEmployeePaid(emp.id, 1);
                   const paid2 = isEmployeePaid(emp.id, 2);
+                  const skipped1 = isEmployeeSkipped(emp.id, 1);
+                  const skipped2 = isEmployeeSkipped(emp.id, 2);
+                  const done1 = paid1 || skipped1;
+                  const done2 = paid2 || skipped2;
                   return (
                     <div key={emp.id} className="grid grid-cols-12 gap-2 px-4 py-3 items-center group">
                       <div className="col-span-4">
-                        <input type="text" value={emp.name} onChange={(e) => updateEmployee(emp.id, 'name', e.target.value)} placeholder="Имя" className="w-full bg-transparent text-neutral-700 focus:outline-none" />
+                        <EditableInput value={emp.name} onSave={(v) => updateEmployee(emp.id, 'name', v)} placeholder="Имя" className="w-full bg-transparent text-neutral-700 focus:outline-none focus:bg-neutral-50 rounded px-1" />
                       </div>
-                      <div className="col-span-3 flex items-center justify-center gap-2">
-                        <input type="number" value={emp.pay1} onChange={(e) => updateEmployee(emp.id, 'pay1', e.target.value)} className={`w-20 text-right bg-neutral-50 rounded px-2 py-1 font-medium focus:outline-none ${paid1 ? 'text-neutral-300 line-through' : 'text-violet-600'}`} />
-                        <button onClick={() => !paid1 && markEmployeeDone(emp, 1)} disabled={paid1} className={`w-6 h-6 rounded flex items-center justify-center transition-all ${paid1 ? 'bg-emerald-500 cursor-default' : 'border-2 border-neutral-300 hover:border-emerald-400 hover:bg-emerald-50'}`}>
-                          <Check size={12} className={paid1 ? 'text-white' : 'text-neutral-300'} />
-                        </button>
+                      <div className="col-span-3 flex items-center justify-center gap-1">
+                        <EditableInput value={emp.pay1} onSave={(v) => updateEmployee(emp.id, 'pay1', v)} className={`w-20 text-right bg-neutral-50 rounded px-2 py-1 font-medium focus:outline-none ${done1 ? 'text-neutral-300 line-through' : 'text-violet-600'}`} />
+                        {!done1 && (
+                          <>
+                            <button onClick={() => markEmployeeDone(emp, 1)} className="w-5 h-5 rounded border-2 border-emerald-300 hover:border-emerald-500 hover:bg-emerald-50 flex items-center justify-center transition-all" title="Оплачено">
+                              <Check size={10} className="text-emerald-400" />
+                            </button>
+                            <button onClick={() => skipEmployeePayment(emp, 1)} className="w-5 h-5 rounded border-2 border-orange-300 hover:border-orange-500 hover:bg-orange-50 flex items-center justify-center transition-all text-[10px] font-bold text-orange-400" title="В долг">
+                              ✕
+                            </button>
+                          </>
+                        )}
+                        {paid1 && <div className="w-5 h-5 rounded bg-emerald-500 flex items-center justify-center"><Check size={10} className="text-white" /></div>}
+                        {skipped1 && <div className="w-5 h-5 rounded bg-orange-500 flex items-center justify-center text-[10px] text-white font-bold">!</div>}
                       </div>
-                      <div className="col-span-3 flex items-center justify-center gap-2">
-                        <input type="number" value={emp.pay2} onChange={(e) => updateEmployee(emp.id, 'pay2', e.target.value)} className={`w-20 text-right bg-neutral-50 rounded px-2 py-1 font-medium focus:outline-none ${paid2 ? 'text-neutral-300 line-through' : 'text-violet-600'}`} />
-                        <button onClick={() => !paid2 && markEmployeeDone(emp, 2)} disabled={paid2} className={`w-6 h-6 rounded flex items-center justify-center transition-all ${paid2 ? 'bg-emerald-500 cursor-default' : 'border-2 border-neutral-300 hover:border-emerald-400 hover:bg-emerald-50'}`}>
-                          <Check size={12} className={paid2 ? 'text-white' : 'text-neutral-300'} />
-                        </button>
+                      <div className="col-span-3 flex items-center justify-center gap-1">
+                        <EditableInput value={emp.pay2} onSave={(v) => updateEmployee(emp.id, 'pay2', v)} className={`w-20 text-right bg-neutral-50 rounded px-2 py-1 font-medium focus:outline-none ${done2 ? 'text-neutral-300 line-through' : 'text-violet-600'}`} />
+                        {!done2 && (
+                          <>
+                            <button onClick={() => markEmployeeDone(emp, 2)} className="w-5 h-5 rounded border-2 border-emerald-300 hover:border-emerald-500 hover:bg-emerald-50 flex items-center justify-center transition-all" title="Оплачено">
+                              <Check size={10} className="text-emerald-400" />
+                            </button>
+                            <button onClick={() => skipEmployeePayment(emp, 2)} className="w-5 h-5 rounded border-2 border-orange-300 hover:border-orange-500 hover:bg-orange-50 flex items-center justify-center transition-all text-[10px] font-bold text-orange-400" title="В долг">
+                              ✕
+                            </button>
+                          </>
+                        )}
+                        {paid2 && <div className="w-5 h-5 rounded bg-emerald-500 flex items-center justify-center"><Check size={10} className="text-white" /></div>}
+                        {skipped2 && <div className="w-5 h-5 rounded bg-orange-500 flex items-center justify-center text-[10px] text-white font-bold">!</div>}
                       </div>
                       <div className="col-span-2 text-right font-medium text-neutral-700">{fmt(emp.pay1 + emp.pay2)}</div>
                     </div>
