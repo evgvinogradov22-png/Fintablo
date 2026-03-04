@@ -1,8 +1,12 @@
-const express = require('express');
-const Database = require('better-sqlite3');
-const cors = require('cors');
-const path = require('path');
-const fs = require('fs');
+import express from 'express';
+import Database from 'better-sqlite3';
+import cors from 'cors';
+import path from 'path';
+import fs from 'fs';
+import { fileURLToPath } from 'url';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 const app = express();
 const PORT = process.env.PORT || 3000;
