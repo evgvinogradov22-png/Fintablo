@@ -1,8 +1,7 @@
 import express from 'express';
-import Database from 'better-sqlite3';
+import { createClient } from '@libsql/client';
 import cors from 'cors';
 import path from 'path';
-import fs from 'fs';
 import { fileURLToPath } from 'url';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -11,72 +10,80 @@ const __dirname = path.dirname(__filename);
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// Database path - use Railway volume if available
-const DATA_DIR = process.env.RAILWAY_VOLUME_MOUNT_PATH || './data';
-if (!fs.existsSync(DATA_DIR)) {
-  fs.mkdirSync(DATA_DIR, { recursive: true });
-}
-const DB_PATH = path.join(DATA_DIR, 'budget.db');
+// Turso database
+const db = createClient({
+  url: process.env.TURSO_URL || 'libsql://budget-evgvinogradov22-png.aws-eu-west-1.turso.io',
+  authToken: process.env.TURSO_TOKEN || ''
+});
 
-console.log(`Database path: ${DB_PATH}`);
+// Create table
+async function initDB() {
+  await db.execute(`
+    CREATE TABLE IF NOT EXISTS data (
+      key TEXT PRIMARY KEY,
+      value TEXT,
+      updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+    )
+  `);
+  console.log('Database initialized');
+}
+initDB();
 
 // Middleware
 app.use(cors());
 app.use(express.json({ limit: '10mb' }));
 app.use(express.static(path.join(__dirname, 'dist')));
 
-// Database setup
-const db = new Database(DB_PATH);
-
-// Create tables
-db.exec(`
-  CREATE TABLE IF NOT EXISTS data (
-    key TEXT PRIMARY KEY,
-    value TEXT,
-    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
-  )
-`);
-
 // API Routes
-app.get('/api/data/:key', (req, res) => {
+app.get('/api/data/:key', async (req, res) => {
   try {
-    const row = db.prepare('SELECT value FROM data WHERE key = ?').get(req.params.key);
-    if (row) {
-      res.json({ key: req.params.key, value: row.value });
+    const result = await db.execute({
+      sql: 'SELECT value FROM data WHERE key = ?',
+      args: [req.params.key]
+    });
+    if (result.rows.length > 0) {
+      res.json({ key: req.params.key, value: result.rows[0].value });
     } else {
       res.status(404).json({ error: 'Not found' });
     }
   } catch (error) {
+    console.error('GET error:', error);
     res.status(500).json({ error: error.message });
   }
 });
 
-app.post('/api/data/:key', (req, res) => {
+app.post('/api/data/:key', async (req, res) => {
   try {
     const { value } = req.body;
-    db.prepare(`
-      INSERT INTO data (key, value, updated_at) 
-      VALUES (?, ?, CURRENT_TIMESTAMP)
-      ON CONFLICT(key) DO UPDATE SET value = ?, updated_at = CURRENT_TIMESTAMP
-    `).run(req.params.key, value, value);
+    await db.execute({
+      sql: `INSERT INTO data (key, value, updated_at) 
+            VALUES (?, ?, datetime('now'))
+            ON CONFLICT(key) DO UPDATE SET value = ?, updated_at = datetime('now')`,
+      args: [req.params.key, value, value]
+    });
     res.json({ success: true, key: req.params.key });
   } catch (error) {
+    console.error('POST error:', error);
     res.status(500).json({ error: error.message });
   }
 });
 
-app.delete('/api/data/:key', (req, res) => {
+app.delete('/api/data/:key', async (req, res) => {
   try {
-    db.prepare('DELETE FROM data WHERE key = ?').run(req.params.key);
+    await db.execute({
+      sql: 'DELETE FROM data WHERE key = ?',
+      args: [req.params.key]
+    });
     res.json({ success: true });
   } catch (error) {
+    console.error('DELETE error:', error);
     res.status(500).json({ error: error.message });
   }
 });
 
 // Health check
 app.get('/api/health', (req, res) => {
-  res.json({ status: 'ok', db: DB_PATH });
+  res.json({ status: 'ok', db: 'turso' });
 });
 
 // SPA fallback
