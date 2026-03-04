@@ -147,7 +147,13 @@ export default function BudgetSystem() {
   const [authChecked, setAuthChecked] = useState(false);
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [selectedMonth, setSelectedMonth] = useState('2026-03');
+  
+  // Текущая дата
+  const today = new Date();
+  const currentDay = today.getDate();
+  const currentMonthKey = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}`;
+  
+  const [selectedMonth, setSelectedMonth] = useState(currentMonthKey);
   const [tab, setTab] = useState('budget');
 
   useEffect(() => { 
@@ -313,7 +319,13 @@ export default function BudgetSystem() {
     const newData = JSON.parse(JSON.stringify(current));
     if (!newData.months[selectedMonth]) newData.months[selectedMonth] = { income: [], expenses: [], debts: [] };
     if (!newData.months[selectedMonth][type]) newData.months[selectedMonth][type] = [];
-    newData.months[selectedMonth][type].push({ id: Date.now(), name: '', amount: 0, day: 1 });
+    
+    // Определяем день: если текущий месяц — сегодняшний день, иначе 1
+    const { year, month } = parseMonthKey(selectedMonth);
+    const isCurrentMonth = selectedMonth === currentMonthKey;
+    const defaultDay = isCurrentMonth ? currentDay : 1;
+    
+    newData.months[selectedMonth][type].push({ id: Date.now(), name: '', amount: 0, day: defaultDay });
     save(newData);
   };
 
@@ -654,7 +666,10 @@ export default function BudgetSystem() {
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
               <button onClick={() => changeMonth(-1)} className="p-1.5 hover:bg-neutral-100 rounded-lg transition-colors"><ChevronLeft size={20} className="text-neutral-400" /></button>
-              <h1 className="text-lg font-semibold text-neutral-800 min-w-[150px] text-center">{monthName}</h1>
+              <div className="text-center min-w-[150px]">
+                <h1 className="text-lg font-semibold text-neutral-800">{monthName}</h1>
+                <div className="text-xs text-neutral-400">Сегодня: {currentDay} {MONTHS_SHORT[today.getMonth()]}</div>
+              </div>
               <button onClick={() => changeMonth(1)} className="p-1.5 hover:bg-neutral-100 rounded-lg transition-colors"><ChevronRight size={20} className="text-neutral-400" /></button>
             </div>
             <div className="flex items-center gap-2">
