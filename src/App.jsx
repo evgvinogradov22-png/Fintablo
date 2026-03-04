@@ -210,10 +210,17 @@ export default function BudgetSystem() {
     return data;
   };
 
+  // Проверка что месяц не раньше марта 2026
+  const MIN_MONTH = '2026-03';
+  
   const changeMonth = (dir) => {
     const { year, month } = parseMonthKey(selectedMonth);
     const d = new Date(year, month - 1 + dir, 1);
     const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+    
+    // Не даём уйти раньше марта 2026
+    if (key < MIN_MONTH) return;
+    
     ensureMonth(key);
     setSelectedMonth(key);
   };
