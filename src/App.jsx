@@ -82,14 +82,15 @@ const defaultData = {
     { id: 5, name: 'Тбанк', balance: 0 },
     { id: 6, name: 'Сбер', balance: 0 },
   ],
+  // Сотрудники - только имена
   employees: [
-    { id: 1, name: 'Саша', pay1: 14825, pay2: 14825 },
-    { id: 2, name: 'Вадим', pay1: 35100, pay2: 35100 },
-    { id: 3, name: 'Настя', pay1: 16200, pay2: 16200 },
-    { id: 4, name: 'Марина', pay1: 15300, pay2: 15300 },
-    { id: 5, name: 'Ксюша', pay1: 15000, pay2: 15000 },
-    { id: 6, name: 'Миша', pay1: 2850, pay2: 2850 },
-    { id: 7, name: 'Дима', pay1: 7200, pay2: 7200 },
+    { id: 1, name: 'Саша' },
+    { id: 2, name: 'Вадим' },
+    { id: 3, name: 'Настя' },
+    { id: 4, name: 'Марина' },
+    { id: 5, name: 'Ксюша' },
+    { id: 6, name: 'Миша' },
+    { id: 7, name: 'Дима' },
   ],
   fotSettings: { payDay1: 5, payDay2: 20 },
   credits: [
@@ -103,6 +104,18 @@ const defaultData = {
   ],
   // ДДС - движение денежных средств (выполненные операции)
   dds: {},
+  // Зарплаты по месяцам: { '2026-03': { empId: { pay1: 10000, pay2: 10000 } } }
+  salaries: {
+    '2026-03': {
+      1: { pay1: 14825, pay2: 14825 },
+      2: { pay1: 35100, pay2: 35100 },
+      3: { pay1: 16200, pay2: 16200 },
+      4: { pay1: 15300, pay2: 15300 },
+      5: { pay1: 15000, pay2: 15000 },
+      6: { pay1: 2850, pay2: 2850 },
+      7: { pay1: 7200, pay2: 7200 },
+    }
+  },
   months: {
     '2026-03': {
       income: [
@@ -255,7 +268,8 @@ export default function BudgetSystem() {
     if (!newData.dds[selectedMonth]) newData.dds[selectedMonth] = [];
     
     const day = payNum === 1 ? data.fotSettings.payDay1 : data.fotSettings.payDay2;
-    const amount = payNum === 1 ? emp.pay1 : emp.pay2;
+    const salary = data.salaries?.[selectedMonth]?.[emp.id] || { pay1: 0, pay2: 0 };
+    const amount = payNum === 1 ? salary.pay1 : salary.pay2;
     
     newData.dds[selectedMonth].push({
       id: Date.now(),
@@ -325,14 +339,27 @@ export default function BudgetSystem() {
 
   const addEmployee = () => {
     const newData = JSON.parse(JSON.stringify(data));
-    newData.employees.push({ id: Date.now(), name: '', pay1: 0, pay2: 0 });
+    const newId = Date.now();
+    newData.employees.push({ id: newId, name: '' });
+    // Инициализируем зарплату для текущего месяца
+    if (!newData.salaries) newData.salaries = {};
+    if (!newData.salaries[selectedMonth]) newData.salaries[selectedMonth] = {};
+    newData.salaries[selectedMonth][newId] = { pay1: 0, pay2: 0 };
     save(newData);
   };
 
   const updateEmployee = (id, field, value) => {
     const newData = JSON.parse(JSON.stringify(data));
-    const emp = newData.employees.find(e => e.id === id);
-    if (emp) emp[field] = field === 'name' ? value : Number(value);
+    if (field === 'name') {
+      const emp = newData.employees.find(e => e.id === id);
+      if (emp) emp.name = value;
+    } else {
+      // pay1 или pay2 — сохраняем для текущего месяца
+      if (!newData.salaries) newData.salaries = {};
+      if (!newData.salaries[selectedMonth]) newData.salaries[selectedMonth] = {};
+      if (!newData.salaries[selectedMonth][id]) newData.salaries[selectedMonth][id] = { pay1: 0, pay2: 0 };
+      newData.salaries[selectedMonth][id][field] = Number(value);
+    }
     save(newData);
   };
 
@@ -340,6 +367,11 @@ export default function BudgetSystem() {
     const newData = JSON.parse(JSON.stringify(data));
     newData.employees = newData.employees.filter(e => e.id !== id);
     save(newData);
+  };
+
+  // Получить зарплату сотрудника за текущий месяц
+  const getEmployeeSalary = (empId) => {
+    return data.salaries?.[selectedMonth]?.[empId] || { pay1: 0, pay2: 0 };
   };
 
   const updateFotSettings = (field, value) => {
@@ -379,9 +411,13 @@ export default function BudgetSystem() {
   const monthName = `${MONTHS[month - 1]} ${year}`;
   
   const totalBalance = data.accounts.reduce((s, a) => s + a.balance, 0);
-  const totalPay1 = data.employees.reduce((s, e) => s + e.pay1, 0);
-  const totalPay2 = data.employees.reduce((s, e) => s + e.pay2, 0);
+  
+  // Зарплаты за текущий месяц
+  const monthSalaries = data.salaries?.[selectedMonth] || {};
+  const totalPay1 = data.employees.reduce((s, e) => s + (monthSalaries[e.id]?.pay1 || 0), 0);
+  const totalPay2 = data.employees.reduce((s, e) => s + (monthSalaries[e.id]?.pay2 || 0), 0);
   const totalSalary = totalPay1 + totalPay2;
+  
   const totalCreditsDebt = data.credits.reduce((s, c) => s + c.totalDebt, 0);
   const totalCreditsMonthly = data.credits.reduce((s, c) => s + c.monthlyPayment, 0);
 
@@ -499,7 +535,8 @@ export default function BudgetSystem() {
     if (!newData.months[selectedMonth].debts) newData.months[selectedMonth].debts = [];
     
     const day = payNum === 1 ? data.fotSettings.payDay1 : data.fotSettings.payDay2;
-    const amount = payNum === 1 ? emp.pay1 : emp.pay2;
+    const salary = data.salaries?.[selectedMonth]?.[emp.id] || { pay1: 0, pay2: 0 };
+    const amount = payNum === 1 ? salary.pay1 : salary.pay2;
     const { month: m } = parseMonthKey(selectedMonth);
     
     newData.months[selectedMonth].debts.push({
@@ -791,6 +828,7 @@ export default function BudgetSystem() {
               </div>
               <div className="divide-y divide-neutral-100">
                 {data.employees.map(emp => {
+                  const salary = getEmployeeSalary(emp.id);
                   const paid1 = isEmployeePaid(emp.id, 1);
                   const paid2 = isEmployeePaid(emp.id, 2);
                   const skipped1 = isEmployeeSkipped(emp.id, 1);
@@ -803,7 +841,7 @@ export default function BudgetSystem() {
                         <EditableInput value={emp.name} onSave={(v) => updateEmployee(emp.id, 'name', v)} placeholder="Имя" className="w-full bg-transparent text-neutral-700 focus:outline-none focus:bg-neutral-50 rounded px-1" />
                       </div>
                       <div className="col-span-3 flex items-center justify-center gap-1">
-                        <EditableInput value={emp.pay1} onSave={(v) => updateEmployee(emp.id, 'pay1', v)} className={`w-20 text-right bg-neutral-50 rounded px-2 py-1 font-medium focus:outline-none ${done1 ? 'text-neutral-300 line-through' : 'text-violet-600'}`} />
+                        <EditableInput value={salary.pay1} onSave={(v) => updateEmployee(emp.id, 'pay1', v)} className={`w-20 text-right bg-neutral-50 rounded px-2 py-1 font-medium focus:outline-none ${done1 ? 'text-neutral-300 line-through' : 'text-violet-600'}`} />
                         {!done1 && (
                           <>
                             <button onClick={() => markEmployeeDone(emp, 1)} className="w-5 h-5 rounded border-2 border-emerald-300 hover:border-emerald-500 hover:bg-emerald-50 flex items-center justify-center transition-all" title="Оплачено">
@@ -818,7 +856,7 @@ export default function BudgetSystem() {
                         {skipped1 && <div className="w-5 h-5 rounded bg-orange-500 flex items-center justify-center text-[10px] text-white font-bold">!</div>}
                       </div>
                       <div className="col-span-3 flex items-center justify-center gap-1">
-                        <EditableInput value={emp.pay2} onSave={(v) => updateEmployee(emp.id, 'pay2', v)} className={`w-20 text-right bg-neutral-50 rounded px-2 py-1 font-medium focus:outline-none ${done2 ? 'text-neutral-300 line-through' : 'text-violet-600'}`} />
+                        <EditableInput value={salary.pay2} onSave={(v) => updateEmployee(emp.id, 'pay2', v)} className={`w-20 text-right bg-neutral-50 rounded px-2 py-1 font-medium focus:outline-none ${done2 ? 'text-neutral-300 line-through' : 'text-violet-600'}`} />
                         {!done2 && (
                           <>
                             <button onClick={() => markEmployeeDone(emp, 2)} className="w-5 h-5 rounded border-2 border-emerald-300 hover:border-emerald-500 hover:bg-emerald-50 flex items-center justify-center transition-all" title="Оплачено">
@@ -832,7 +870,7 @@ export default function BudgetSystem() {
                         {paid2 && <div className="w-5 h-5 rounded bg-emerald-500 flex items-center justify-center"><Check size={10} className="text-white" /></div>}
                         {skipped2 && <div className="w-5 h-5 rounded bg-orange-500 flex items-center justify-center text-[10px] text-white font-bold">!</div>}
                       </div>
-                      <div className="col-span-2 text-right font-medium text-neutral-700">{fmt(emp.pay1 + emp.pay2)}</div>
+                      <div className="col-span-2 text-right font-medium text-neutral-700">{fmt(salary.pay1 + salary.pay2)}</div>
                     </div>
                   );
                 })}
