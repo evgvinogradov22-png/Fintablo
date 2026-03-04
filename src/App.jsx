@@ -102,6 +102,12 @@ const defaultData = {
     { id: 6, name: 'Сбер Кредитка', totalDebt: 200000, monthlyPayment: 11000, day: 30 },
     { id: 7, name: 'Альфа кредит', totalDebt: 300000, monthlyPayment: 19400, day: 30 },
   ],
+  // Постоянные расходы (ежемесячные)
+  recurringExpenses: [
+    { id: 1, name: 'Питание', amount: 80000, day: 1 },
+    { id: 2, name: 'Бассейн Теодор', amount: 15600, day: 1 },
+    { id: 3, name: 'Развивашки Теодор', amount: 9000, day: 5 },
+  ],
   // ДДС - движение денежных средств (выполненные операции)
   dds: {},
   // Зарплаты по месяцам: { '2026-03': { empId: { pay1: 10000, pay2: 10000 } } }
@@ -129,11 +135,7 @@ const defaultData = {
         { id: 8, name: 'Виолетта', amount: 30000, day: 12 },
         { id: 9, name: 'ФПСП', amount: 500000, day: 25 },
       ],
-      expenses: [
-        { id: 1, name: 'Питание', amount: 80000, day: 1 },
-        { id: 2, name: 'Бассейн Теодор', amount: 15600, day: 1 },
-        { id: 3, name: 'Развивашки Теодор', amount: 9000, day: 5 },
-      ],
+      expenses: [],
       debts: [
         { id: 1, name: 'Женек', amount: 21000, day: 28 },
         { id: 2, name: 'Дядя Миша', amount: 10000, day: 15 },
@@ -411,6 +413,69 @@ export default function BudgetSystem() {
     save(newData);
   };
 
+  // Постоянные расходы
+  const addRecurringExpense = () => {
+    const newData = JSON.parse(JSON.stringify(data));
+    if (!newData.recurringExpenses) newData.recurringExpenses = [];
+    newData.recurringExpenses.push({ id: Date.now(), name: '', amount: 0, day: 1 });
+    save(newData);
+  };
+
+  const updateRecurringExpense = (id, field, value) => {
+    const newData = JSON.parse(JSON.stringify(data));
+    const expense = newData.recurringExpenses.find(e => e.id === id);
+    if (expense) expense[field] = field === 'name' ? value : Number(value);
+    save(newData);
+  };
+
+  const removeRecurringExpense = (id) => {
+    const newData = JSON.parse(JSON.stringify(data));
+    newData.recurringExpenses = newData.recurringExpenses.filter(e => e.id !== id);
+    save(newData);
+  };
+
+  const markRecurringExpenseDone = (expense) => {
+    const newData = JSON.parse(JSON.stringify(data));
+    if (!newData.dds[selectedMonth]) newData.dds[selectedMonth] = [];
+    
+    newData.dds[selectedMonth].push({
+      id: Date.now(),
+      date: new Date().toISOString(),
+      day: expense.day,
+      type: 'recurring',
+      name: expense.name,
+      amount: expense.amount,
+      recurringId: expense.id
+    });
+    
+    save(newData);
+  };
+
+  const skipRecurringExpense = (expense) => {
+    const newData = JSON.parse(JSON.stringify(data));
+    if (!newData.months[selectedMonth]) newData.months[selectedMonth] = { income: [], expenses: [], debts: [] };
+    if (!newData.months[selectedMonth].debts) newData.months[selectedMonth].debts = [];
+    
+    const { month: m } = parseMonthKey(selectedMonth);
+    newData.months[selectedMonth].debts.push({
+      id: Date.now(),
+      name: `${expense.name} (просрочка ${expense.day} ${MONTHS_SHORT[m - 1]})`,
+      amount: expense.amount,
+      day: expense.day,
+      originalType: 'recurring',
+      recurringId: expense.id
+    });
+    
+    if (!newData.skippedRecurring) newData.skippedRecurring = {};
+    if (!newData.skippedRecurring[selectedMonth]) newData.skippedRecurring[selectedMonth] = [];
+    newData.skippedRecurring[selectedMonth].push(expense.id);
+    
+    save(newData);
+  };
+
+  const isRecurringPaid = (id) => (data.dds?.[selectedMonth] || []).some(d => d.type === 'recurring' && d.recurringId === id);
+  const isRecurringSkipped = (id) => data.skippedRecurring?.[selectedMonth]?.includes(id);
+
   if (!authChecked) return <div className="min-h-screen bg-neutral-50 flex items-center justify-center text-neutral-400">Загрузка...</div>;
   
   if (!isAuthenticated) return <LoginScreen onLogin={handleLogin} />;
@@ -437,6 +502,12 @@ export default function BudgetSystem() {
   const isEmployeePaid = (empId, payNum) => dds.some(d => d.type === 'salary' && d.employeeId === empId && d.payNum === payNum);
   const isCreditPaid = (creditId) => dds.some(d => d.type === 'credit' && d.creditId === creditId);
 
+  // Постоянные расходы
+  const recurringExpenses = data.recurringExpenses || [];
+  const totalRecurring = recurringExpenses.reduce((s, e) => s + e.amount, 0);
+  const ddsRecurring = dds.filter(d => d.type === 'recurring').reduce((s, d) => s + d.amount, 0);
+  const planRecurring = totalRecurring - ddsRecurring;
+
   // Суммы из ДДС
   const ddsIncome = dds.filter(d => d.type === 'income').reduce((s, d) => s + d.amount, 0);
   const ddsExpenses = dds.filter(d => d.type === 'expense').reduce((s, d) => s + d.amount, 0);
@@ -452,12 +523,12 @@ export default function BudgetSystem() {
   const planCredits = totalCreditsMonthly - ddsCredits;
 
   const totalIncome = planIncome + ddsIncome;
-  const totalOut = planExpenses + ddsExpenses + totalSalary + totalCreditsMonthly + planDebts + ddsDebts;
+  const totalOut = planExpenses + ddsExpenses + totalSalary + totalCreditsMonthly + planDebts + ddsDebts + totalRecurring;
   
   const prevMonthKey = getPrevMonthKey(selectedMonth);
   const prevDDS = data.dds[prevMonthKey] || [];
   const prevIncome = prevDDS.filter(d => d.type === 'income').reduce((s, d) => s + d.amount, 0);
-  const prevOut = prevDDS.filter(d => ['expense', 'salary', 'credit', 'debt'].includes(d.type)).reduce((s, d) => s + d.amount, 0);
+  const prevOut = prevDDS.filter(d => ['expense', 'salary', 'credit', 'debt', 'recurring'].includes(d.type)).reduce((s, d) => s + d.amount, 0);
   const prevBalance = totalBalance; // Упрощённо
   const endBalance = prevBalance + totalIncome - totalOut;
 
@@ -475,8 +546,9 @@ export default function BudgetSystem() {
                      dds.filter(i => i.type === 'debt' && i.day === d).reduce((s, i) => s + i.amount, 0);
     const dayCredits = data.credits.filter(c => c.day === d).reduce((s, c) => s + c.monthlyPayment, 0);
     const daySalary = (d === data.fotSettings.payDay1 ? totalPay1 : 0) + (d === data.fotSettings.payDay2 ? totalPay2 : 0);
+    const dayRecurring = recurringExpenses.filter(e => e.day === d).reduce((s, e) => s + e.amount, 0);
     
-    cumBalance += dayIncome - dayExpense - dayDebts - dayCredits - daySalary;
+    cumBalance += dayIncome - dayExpense - dayDebts - dayCredits - daySalary - dayRecurring;
     chartData.push({ day: d, balance: cumBalance });
   }
 
@@ -487,7 +559,8 @@ export default function BudgetSystem() {
     (md.income || []).filter(i => i.day === day).forEach(i => items.push({ ...i, type: 'income' }));
     (md.expenses || []).filter(i => i.day === day).forEach(i => items.push({ ...i, type: 'expense' }));
     (md.debts || []).filter(i => i.day === day).forEach(i => items.push({ ...i, type: 'debt' }));
-    data.credits.filter(c => c.day === day && !isCreditPaid(c.id)).forEach(c => items.push({ name: c.name, amount: c.monthlyPayment, type: 'credit' }));
+    recurringExpenses.filter(e => e.day === day && !isRecurringPaid(e.id) && !isRecurringSkipped(e.id)).forEach(e => items.push({ name: e.name, amount: e.amount, type: 'recurring' }));
+    data.credits.filter(c => c.day === day && !isCreditPaid(c.id) && !isCreditSkipped(c.id)).forEach(c => items.push({ name: c.name, amount: c.monthlyPayment, type: 'credit' }));
     if (day === data.fotSettings.payDay1 && data.employees.some(e => !isEmployeePaid(e.id, 1))) items.push({ name: 'ФОТ (1)', amount: totalPay1, type: 'fot' });
     if (day === data.fotSettings.payDay2 && data.employees.some(e => !isEmployeePaid(e.id, 2))) items.push({ name: 'ФОТ (2)', amount: totalPay2, type: 'fot' });
     dds.filter(d => d.day === day).forEach(d => items.push({ ...d, done: true }));
@@ -596,37 +669,37 @@ export default function BudgetSystem() {
   };
 
   const Row = ({ item, type, onDone, onSkip, onUpdate, onRemove, color }) => (
-    <div className="flex items-center gap-2 py-2.5 border-b border-neutral-100 last:border-0 group">
+    <div className="flex items-center gap-1 sm:gap-2 py-2 sm:py-2.5 border-b border-neutral-100 last:border-0 group">
       <button onClick={onDone} className="w-5 h-5 rounded border-2 border-emerald-300 hover:border-emerald-500 hover:bg-emerald-50 flex items-center justify-center transition-all flex-shrink-0" title="Оплачено">
-        <Check size={12} className="text-emerald-400 group-hover:text-emerald-600" />
+        <Check size={10} className="text-emerald-400 group-hover:text-emerald-600 sm:w-3 sm:h-3" />
       </button>
       <button onClick={onSkip} className="w-5 h-5 rounded border-2 border-orange-300 hover:border-orange-500 hover:bg-orange-50 flex items-center justify-center transition-all flex-shrink-0 text-[10px] font-bold text-orange-400 hover:text-orange-600" title="Пропустить → в долг">
         ✕
       </button>
-      <div className="w-16 flex-shrink-0">
+      <div className="w-10 sm:w-16 flex-shrink-0">
         <EditableInput 
           type="number" 
           value={item.day} 
           onSave={(v) => onUpdate('day', v)} 
-          className="w-8 text-center text-sm bg-neutral-100 rounded px-1 py-0.5 text-neutral-600 focus:outline-none focus:ring-2 focus:ring-blue-300" 
+          className="w-6 sm:w-8 text-center text-xs sm:text-sm bg-neutral-100 rounded px-0.5 sm:px-1 py-0.5 text-neutral-600 focus:outline-none focus:ring-2 focus:ring-blue-300" 
           min="1" 
           max="31" 
         />
-        <span className="text-xs text-neutral-400 ml-1">{MONTHS_SHORT[month - 1]}</span>
+        <span className="text-[10px] sm:text-xs text-neutral-400 ml-0.5 sm:ml-1">{MONTHS_SHORT[month - 1]}</span>
       </div>
       <EditableInput 
         value={item.name} 
         onSave={(v) => onUpdate('name', v)} 
         placeholder="Название" 
-        className="flex-1 bg-transparent focus:outline-none focus:bg-neutral-50 rounded px-1 min-w-0 text-neutral-700" 
+        className="flex-1 bg-transparent focus:outline-none focus:bg-neutral-50 rounded px-1 min-w-0 text-xs sm:text-sm text-neutral-700" 
       />
       <EditableInput 
         value={item.amount} 
         onSave={(v) => onUpdate('amount', v)} 
-        className={`w-28 text-right bg-transparent focus:outline-none focus:bg-neutral-50 rounded px-1 font-medium flex-shrink-0 ${color}`} 
+        className={`w-16 sm:w-28 text-right bg-transparent focus:outline-none focus:bg-neutral-50 rounded px-1 text-xs sm:text-sm font-medium flex-shrink-0 ${color}`} 
       />
-      <button onClick={onRemove} className="text-neutral-200 group-hover:text-neutral-400 hover:!text-red-400 transition-colors p-1 flex-shrink-0">
-        <Trash2 size={14} />
+      <button onClick={onRemove} className="text-neutral-200 group-hover:text-neutral-400 hover:!text-red-400 transition-colors p-0.5 sm:p-1 flex-shrink-0">
+        <Trash2 size={12} className="sm:w-[14px] sm:h-[14px]" />
       </button>
     </div>
   );
@@ -635,14 +708,14 @@ export default function BudgetSystem() {
     const total = items.reduce((s, i) => s + i.amount, 0);
     return (
       <div className="bg-white rounded-xl border border-neutral-200 overflow-hidden">
-        <div className="flex items-center justify-between px-4 py-3 bg-neutral-50 border-b border-neutral-100">
-          <div className="flex items-center gap-2">
-            <div className={`w-6 h-6 rounded-md ${bgColor} flex items-center justify-center`}><Icon size={14} className={iconColor} /></div>
-            <span className="font-medium text-neutral-700">{title}</span>
+        <div className="flex items-center justify-between px-3 sm:px-4 py-2 sm:py-3 bg-neutral-50 border-b border-neutral-100">
+          <div className="flex items-center gap-1.5 sm:gap-2">
+            <div className={`w-5 h-5 sm:w-6 sm:h-6 rounded-md ${bgColor} flex items-center justify-center`}><Icon size={12} className={`${iconColor} sm:w-[14px] sm:h-[14px]`} /></div>
+            <span className="font-medium text-neutral-700 text-sm sm:text-base">{title}</span>
           </div>
-          <span className={`text-sm font-medium ${textColor}`}>{fmt(total)}</span>
+          <span className={`text-xs sm:text-sm font-medium ${textColor}`}>{fmt(total)}</span>
         </div>
-        <div className="px-4 py-1">
+        <div className="px-2 sm:px-4 py-1">
           {items.sort((a, b) => a.day - b.day).map(item => (
             <Row key={item.id} item={item} type={type} color={textColor}
               onDone={() => markDone(type, item)}
@@ -651,8 +724,8 @@ export default function BudgetSystem() {
               onRemove={() => remove(type, item.id)}
             />
           ))}
-          <button onClick={() => add(type)} className="flex items-center gap-1 text-sm text-neutral-400 hover:text-neutral-600 py-2.5 transition-colors w-full">
-            <Plus size={14} /> Добавить
+          <button onClick={() => add(type)} className="flex items-center gap-1 text-xs sm:text-sm text-neutral-400 hover:text-neutral-600 py-2 sm:py-2.5 transition-colors w-full">
+            <Plus size={12} className="sm:w-[14px] sm:h-[14px]" /> Добавить
           </button>
         </div>
       </div>
@@ -662,71 +735,76 @@ export default function BudgetSystem() {
   return (
     <div className="min-h-screen bg-neutral-50" style={{ fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" }}>
       <header className="bg-white border-b border-neutral-200 sticky top-0 z-50">
-        <div className="max-w-4xl mx-auto px-4 py-3">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <button onClick={() => changeMonth(-1)} className="p-1.5 hover:bg-neutral-100 rounded-lg transition-colors"><ChevronLeft size={20} className="text-neutral-400" /></button>
-              <div className="text-center min-w-[150px]">
-                <h1 className="text-lg font-semibold text-neutral-800">{monthName}</h1>
-                <div className="text-xs text-neutral-400">Сегодня: {currentDay} {MONTHS_SHORT[today.getMonth()]}</div>
+        <div className="max-w-4xl mx-auto px-3 sm:px-4 py-2 sm:py-3">
+          {/* Верхняя строка: месяц и выход */}
+          <div className="flex items-center justify-between mb-2 sm:mb-0">
+            <div className="flex items-center gap-2 sm:gap-3">
+              <button onClick={() => changeMonth(-1)} className="p-1 sm:p-1.5 hover:bg-neutral-100 rounded-lg transition-colors"><ChevronLeft size={20} className="text-neutral-400" /></button>
+              <div className="text-center min-w-[120px] sm:min-w-[150px]">
+                <h1 className="text-base sm:text-lg font-semibold text-neutral-800">{monthName}</h1>
+                <div className="text-[10px] sm:text-xs text-neutral-400">Сегодня: {currentDay} {MONTHS_SHORT[today.getMonth()]}</div>
               </div>
-              <button onClick={() => changeMonth(1)} className="p-1.5 hover:bg-neutral-100 rounded-lg transition-colors"><ChevronRight size={20} className="text-neutral-400" /></button>
+              <button onClick={() => changeMonth(1)} className="p-1 sm:p-1.5 hover:bg-neutral-100 rounded-lg transition-colors"><ChevronRight size={20} className="text-neutral-400" /></button>
             </div>
-            <div className="flex items-center gap-2">
-              <div className="flex items-center gap-1 bg-neutral-100 rounded-lg p-1">
-                {[
-                  { id: 'budget', label: 'Бюджет' },
-                  { id: 'employees', label: 'Сотрудники' },
-                  { id: 'credits', label: 'Кредиты' },
-                  { id: 'dds', label: 'ДДС' },
-                  { id: 'calendar', label: 'Календарь' },
-                ].map(t => (
-                  <button key={t.id} onClick={() => setTab(t.id)} className={`px-3 py-1.5 rounded-md text-sm transition-all ${tab === t.id ? 'bg-white text-neutral-800 shadow-sm font-medium' : 'text-neutral-500 hover:text-neutral-700'}`}>
-                    {t.label}
-                    {t.id === 'dds' && dds.length > 0 && <span className="ml-1 text-xs bg-emerald-500 text-white px-1.5 rounded-full">{dds.length}</span>}
-                  </button>
-                ))}
-              </div>
-              <button onClick={handleLogout} className="p-2 hover:bg-red-50 rounded-lg transition-colors group" title="Выйти">
-                <LogOut size={18} className="text-neutral-400 group-hover:text-red-500" />
-              </button>
+            <button onClick={handleLogout} className="p-2 hover:bg-red-50 rounded-lg transition-colors group" title="Выйти">
+              <LogOut size={18} className="text-neutral-400 group-hover:text-red-500" />
+            </button>
+          </div>
+          {/* Табы - горизонтальный скролл на мобильных */}
+          <div className="overflow-x-auto -mx-3 px-3 sm:mx-0 sm:px-0 scrollbar-hide">
+            <div className="flex items-center gap-1 bg-neutral-100 rounded-lg p-1 min-w-max">
+              {[
+                { id: 'budget', label: 'Бюджет', icon: '📊' },
+                { id: 'employees', label: 'Сотрудники', icon: '👥' },
+                { id: 'recurring', label: 'Пост.', icon: '🔄' },
+                { id: 'credits', label: 'Кредиты', icon: '💳' },
+                { id: 'dds', label: 'ДДС', icon: '📋' },
+                { id: 'calendar', label: 'Календарь', icon: '📅' },
+              ].map(t => (
+                <button key={t.id} onClick={() => setTab(t.id)} className={`px-2 sm:px-3 py-1.5 rounded-md text-xs sm:text-sm transition-all whitespace-nowrap ${tab === t.id ? 'bg-white text-neutral-800 shadow-sm font-medium' : 'text-neutral-500 hover:text-neutral-700'}`}>
+                  <span className="sm:hidden">{t.icon}</span>
+                  <span className="hidden sm:inline">{t.label}</span>
+                  <span className="sm:hidden ml-1">{t.id === 'recurring' ? 'Пост.' : t.id === 'employees' ? 'Сотр.' : t.label}</span>
+                  {t.id === 'dds' && dds.length > 0 && <span className="ml-1 text-[10px] sm:text-xs bg-emerald-500 text-white px-1 sm:px-1.5 rounded-full">{dds.length}</span>}
+                </button>
+              ))}
             </div>
           </div>
         </div>
       </header>
 
-      <main className="max-w-4xl mx-auto px-4 py-6">
+      <main className="max-w-4xl mx-auto px-3 sm:px-4 py-4 sm:py-6">
         {/* Финансовое состояние — всегда сверху */}
-        <div className="bg-white rounded-xl border border-neutral-200 overflow-hidden mb-6">
-          <div className="flex items-center gap-2 px-4 py-3 bg-neutral-50 border-b border-neutral-100">
-            <div className="w-6 h-6 rounded-md bg-blue-100 flex items-center justify-center"><TrendingUp size={14} className="text-blue-600" /></div>
-            <span className="font-medium text-neutral-700">Финансовое состояние</span>
+        <div className="bg-white rounded-xl border border-neutral-200 overflow-hidden mb-4 sm:mb-6">
+          <div className="flex items-center gap-2 px-3 sm:px-4 py-2 sm:py-3 bg-neutral-50 border-b border-neutral-100">
+            <div className="w-5 h-5 sm:w-6 sm:h-6 rounded-md bg-blue-100 flex items-center justify-center"><TrendingUp size={12} className="text-blue-600 sm:w-[14px] sm:h-[14px]" /></div>
+            <span className="font-medium text-neutral-700 text-sm sm:text-base">Финансовое состояние</span>
           </div>
-          <div className="p-4">
-            <div className="grid grid-cols-4 gap-4 mb-4">
+          <div className="p-3 sm:p-4">
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 sm:gap-4 mb-3 sm:mb-4">
               <div className="text-center">
-                <div className="text-xs text-neutral-400 mb-1">Начало</div>
-                <div className={`text-lg font-semibold ${prevBalance >= 0 ? 'text-neutral-700' : 'text-red-500'}`}>{fmtShort(prevBalance)}</div>
+                <div className="text-[10px] sm:text-xs text-neutral-400 mb-0.5 sm:mb-1">Начало</div>
+                <div className={`text-sm sm:text-lg font-semibold ${prevBalance >= 0 ? 'text-neutral-700' : 'text-red-500'}`}>{fmtShort(prevBalance)}</div>
               </div>
               <div className="text-center">
-                <div className="text-xs text-neutral-400 mb-1">Приходы</div>
-                <div className="text-lg font-semibold text-emerald-600">+{fmtShort(totalIncome)}</div>
+                <div className="text-[10px] sm:text-xs text-neutral-400 mb-0.5 sm:mb-1">Приходы</div>
+                <div className="text-sm sm:text-lg font-semibold text-emerald-600">+{fmtShort(totalIncome)}</div>
               </div>
               <div className="text-center">
-                <div className="text-xs text-neutral-400 mb-1">Расходы</div>
-                <div className="text-lg font-semibold text-rose-600">−{fmtShort(totalOut)}</div>
+                <div className="text-[10px] sm:text-xs text-neutral-400 mb-0.5 sm:mb-1">Расходы</div>
+                <div className="text-sm sm:text-lg font-semibold text-rose-600">−{fmtShort(totalOut)}</div>
               </div>
               <div className="text-center">
-                <div className="text-xs text-neutral-400 mb-1">Конец</div>
-                <div className={`text-lg font-semibold ${endBalance >= 0 ? 'text-blue-600' : 'text-red-500'}`}>{fmtShort(endBalance)}</div>
+                <div className="text-[10px] sm:text-xs text-neutral-400 mb-0.5 sm:mb-1">Конец</div>
+                <div className={`text-sm sm:text-lg font-semibold ${endBalance >= 0 ? 'text-blue-600' : 'text-red-500'}`}>{fmtShort(endBalance)}</div>
               </div>
             </div>
-            <div className="h-40">
+            <div className="h-32 sm:h-40">
               <ResponsiveContainer width="100%" height="100%">
-                <LineChart data={chartData} margin={{ top: 5, right: 5, left: 5, bottom: 5 }}>
+                <LineChart data={chartData} margin={{ top: 5, right: 5, left: 0, bottom: 5 }}>
                   <CartesianGrid strokeDasharray="3 3" stroke="#e5e5e5" />
-                  <XAxis dataKey="day" tick={{ fontSize: 10 }} stroke="#a3a3a3" />
-                  <YAxis tick={{ fontSize: 10 }} stroke="#a3a3a3" tickFormatter={v => `${Math.round(v/1000)}K`} />
+                  <XAxis dataKey="day" tick={{ fontSize: 9 }} stroke="#a3a3a3" interval="preserveStartEnd" />
+                  <YAxis tick={{ fontSize: 9 }} stroke="#a3a3a3" tickFormatter={v => `${Math.round(v/1000)}K`} width={35} />
                   <Tooltip formatter={(v) => fmt(v)} labelFormatter={(d) => `${d} ${MONTHS_SHORT[month-1]}`} />
                   <ReferenceLine y={0} stroke="#ef4444" strokeDasharray="3 3" />
                   <Line type="monotone" dataKey="balance" stroke="#3b82f6" strokeWidth={2} dot={false} name="Баланс" />
@@ -737,16 +815,16 @@ export default function BudgetSystem() {
         </div>
 
         {/* Счета */}
-        <div className="bg-white rounded-xl border border-neutral-200 p-4 mb-6">
-          <div className="flex items-center justify-between mb-3">
-            <span className="text-sm font-medium text-neutral-500">Счета</span>
-            <span className={`text-lg font-semibold ${totalBalance >= 0 ? 'text-neutral-800' : 'text-red-500'}`}>{fmt(totalBalance)}</span>
+        <div className="bg-white rounded-xl border border-neutral-200 p-3 sm:p-4 mb-4 sm:mb-6">
+          <div className="flex items-center justify-between mb-2 sm:mb-3">
+            <span className="text-xs sm:text-sm font-medium text-neutral-500">Счета</span>
+            <span className={`text-base sm:text-lg font-semibold ${totalBalance >= 0 ? 'text-neutral-800' : 'text-red-500'}`}>{fmt(totalBalance)}</span>
           </div>
-          <div className="grid grid-cols-3 md:grid-cols-6 gap-2">
+          <div className="grid grid-cols-3 gap-1.5 sm:gap-2">
             {data.accounts.map(acc => (
-              <div key={acc.id} className="bg-neutral-50 rounded-lg p-2.5">
-                <div className="text-xs text-neutral-400 mb-1">{acc.name}</div>
-                <input type="number" value={acc.balance} onChange={(e) => updateAccount(acc.id, e.target.value)} className={`w-full bg-transparent text-sm font-semibold focus:outline-none ${acc.balance >= 0 ? 'text-neutral-700' : 'text-red-500'}`} />
+              <div key={acc.id} className="bg-neutral-50 rounded-lg p-1.5 sm:p-2.5">
+                <div className="text-[10px] sm:text-xs text-neutral-400 mb-0.5 sm:mb-1 truncate">{acc.name}</div>
+                <input type="number" value={acc.balance} onChange={(e) => updateAccount(acc.id, e.target.value)} className={`w-full bg-transparent text-xs sm:text-sm font-semibold focus:outline-none ${acc.balance >= 0 ? 'text-neutral-700' : 'text-red-500'}`} />
               </div>
             ))}
           </div>
@@ -785,6 +863,36 @@ export default function BudgetSystem() {
               </div>
             </div>
 
+            {/* Постоянные расходы */}
+            <div className="bg-white rounded-xl border border-neutral-200 overflow-hidden">
+              <div className="flex items-center justify-between px-4 py-3 bg-neutral-50 border-b border-neutral-100">
+                <div className="flex items-center gap-2">
+                  <div className="w-6 h-6 rounded-md bg-amber-100 flex items-center justify-center"><ArrowUpRight size={14} className="text-amber-600" /></div>
+                  <span className="font-medium text-neutral-700">Постоянные расходы</span>
+                </div>
+                <span className="text-sm font-medium text-amber-600">{fmt(planRecurring)}</span>
+              </div>
+              <div className="px-4 py-1">
+                {recurringExpenses.filter(e => !isRecurringPaid(e.id) && !isRecurringSkipped(e.id)).sort((a, b) => a.day - b.day).map(expense => (
+                  <div key={expense.id} className="flex items-center gap-2 py-2.5 border-b border-neutral-100 last:border-0 group">
+                    <button onClick={() => markRecurringExpenseDone(expense)} className="w-5 h-5 rounded border-2 border-emerald-300 hover:border-emerald-500 hover:bg-emerald-50 flex items-center justify-center transition-all flex-shrink-0" title="Оплачено">
+                      <Check size={12} className="text-emerald-400 group-hover:text-emerald-600" />
+                    </button>
+                    <button onClick={() => skipRecurringExpense(expense)} className="w-5 h-5 rounded border-2 border-orange-300 hover:border-orange-500 hover:bg-orange-50 flex items-center justify-center transition-all flex-shrink-0 text-[10px] font-bold text-orange-400 hover:text-orange-600" title="Пропустить → в долг">
+                      ✕
+                    </button>
+                    <div className="w-16 flex-shrink-0">
+                      <span className="text-sm text-neutral-600">{String(expense.day).padStart(2, '0')}</span>
+                      <span className="text-xs text-neutral-400 ml-1">{MONTHS_SHORT[month - 1]}</span>
+                    </div>
+                    <span className="flex-1 text-neutral-700">{expense.name}</span>
+                    <span className="w-28 text-right font-medium text-amber-600">{fmt(expense.amount)}</span>
+                    <div className="w-7"></div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
             {/* Кредиты */}
             <div className="bg-white rounded-xl border border-neutral-200 overflow-hidden">
               <div className="flex items-center justify-between px-4 py-3 bg-neutral-50 border-b border-neutral-100">
@@ -818,23 +926,72 @@ export default function BudgetSystem() {
         )}
 
         {tab === 'employees' && (
-          <div className="space-y-4">
-            <div className="bg-white rounded-xl border border-neutral-200 p-4">
-              <div className="flex items-center gap-2 mb-3">
-                <Users size={18} className="text-violet-500" />
-                <span className="font-medium text-neutral-700">Даты выплат</span>
+          <div className="space-y-3 sm:space-y-4">
+            <div className="bg-white rounded-xl border border-neutral-200 p-3 sm:p-4">
+              <div className="flex items-center gap-2 mb-2 sm:mb-3">
+                <Users size={16} className="text-violet-500 sm:w-[18px] sm:h-[18px]" />
+                <span className="font-medium text-neutral-700 text-sm sm:text-base">Даты выплат</span>
               </div>
-              <div className="flex gap-4">
+              <div className="flex gap-3 sm:gap-4">
                 {[1, 2].map(num => (
-                  <div key={num} className="flex items-center gap-2">
-                    <span className="text-sm text-neutral-500">Выплата {num}:</span>
-                    <input type="number" value={data.fotSettings[`payDay${num}`]} onChange={(e) => updateFotSettings(`payDay${num}`, e.target.value)} className="w-14 text-center bg-neutral-100 rounded-lg px-2 py-1.5 text-neutral-700 font-medium focus:outline-none" min="1" max="31" />
+                  <div key={num} className="flex items-center gap-1.5 sm:gap-2">
+                    <span className="text-xs sm:text-sm text-neutral-500">Выплата {num}:</span>
+                    <input type="number" value={data.fotSettings[`payDay${num}`]} onChange={(e) => updateFotSettings(`payDay${num}`, e.target.value)} className="w-10 sm:w-14 text-center bg-neutral-100 rounded-lg px-1 sm:px-2 py-1 sm:py-1.5 text-neutral-700 text-sm font-medium focus:outline-none" min="1" max="31" />
                   </div>
                 ))}
               </div>
             </div>
 
-            <div className="bg-white rounded-xl border border-neutral-200 overflow-hidden">
+            {/* Мобильная версия: карточки */}
+            <div className="sm:hidden space-y-2">
+              {data.employees.map(emp => {
+                const salary = getEmployeeSalary(emp.id);
+                const paid1 = isEmployeePaid(emp.id, 1);
+                const paid2 = isEmployeePaid(emp.id, 2);
+                const skipped1 = isEmployeeSkipped(emp.id, 1);
+                const skipped2 = isEmployeeSkipped(emp.id, 2);
+                const done1 = paid1 || skipped1;
+                const done2 = paid2 || skipped2;
+                return (
+                  <div key={emp.id} className="bg-white rounded-xl border border-neutral-200 p-3">
+                    <div className="flex items-center justify-between mb-2">
+                      <EditableInput value={emp.name} onSave={(v) => updateEmployee(emp.id, 'name', v)} placeholder="Имя" className="font-medium text-neutral-800 bg-transparent focus:outline-none focus:bg-neutral-50 rounded px-1 text-sm" />
+                      <span className="text-sm font-semibold text-neutral-700">{fmt(salary.pay1 + salary.pay2)}</span>
+                    </div>
+                    <div className="grid grid-cols-2 gap-2">
+                      <div className="flex items-center gap-1.5 bg-neutral-50 rounded-lg p-2">
+                        <EditableInput value={salary.pay1} onSave={(v) => updateEmployee(emp.id, 'pay1', v)} className={`w-full text-xs font-medium bg-transparent focus:outline-none ${done1 ? 'text-neutral-300 line-through' : 'text-violet-600'}`} />
+                        {!done1 && (
+                          <>
+                            <button onClick={() => markEmployeeDone(emp, 1)} className="w-5 h-5 rounded border-2 border-emerald-300 flex items-center justify-center flex-shrink-0"><Check size={10} className="text-emerald-400" /></button>
+                            <button onClick={() => skipEmployeePayment(emp, 1)} className="w-5 h-5 rounded border-2 border-orange-300 flex items-center justify-center flex-shrink-0 text-[10px] font-bold text-orange-400">✕</button>
+                          </>
+                        )}
+                        {paid1 && <div className="w-5 h-5 rounded bg-emerald-500 flex items-center justify-center flex-shrink-0"><Check size={10} className="text-white" /></div>}
+                        {skipped1 && <div className="w-5 h-5 rounded bg-orange-500 flex items-center justify-center flex-shrink-0 text-[10px] text-white font-bold">!</div>}
+                      </div>
+                      <div className="flex items-center gap-1.5 bg-neutral-50 rounded-lg p-2">
+                        <EditableInput value={salary.pay2} onSave={(v) => updateEmployee(emp.id, 'pay2', v)} className={`w-full text-xs font-medium bg-transparent focus:outline-none ${done2 ? 'text-neutral-300 line-through' : 'text-violet-600'}`} />
+                        {!done2 && (
+                          <>
+                            <button onClick={() => markEmployeeDone(emp, 2)} className="w-5 h-5 rounded border-2 border-emerald-300 flex items-center justify-center flex-shrink-0"><Check size={10} className="text-emerald-400" /></button>
+                            <button onClick={() => skipEmployeePayment(emp, 2)} className="w-5 h-5 rounded border-2 border-orange-300 flex items-center justify-center flex-shrink-0 text-[10px] font-bold text-orange-400">✕</button>
+                          </>
+                        )}
+                        {paid2 && <div className="w-5 h-5 rounded bg-emerald-500 flex items-center justify-center flex-shrink-0"><Check size={10} className="text-white" /></div>}
+                        {skipped2 && <div className="w-5 h-5 rounded bg-orange-500 flex items-center justify-center flex-shrink-0 text-[10px] text-white font-bold">!</div>}
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+              <button onClick={addEmployee} className="flex items-center justify-center gap-1 w-full py-2 text-xs text-neutral-400 hover:text-neutral-600 bg-white rounded-xl border border-dashed border-neutral-300">
+                <Plus size={12} /> Добавить
+              </button>
+            </div>
+
+            {/* Десктопная версия: таблица */}
+            <div className="hidden sm:block bg-white rounded-xl border border-neutral-200 overflow-hidden">
               <div className="grid grid-cols-12 gap-2 px-4 py-3 bg-neutral-50 border-b border-neutral-100 text-sm font-medium text-neutral-500">
                 <div className="col-span-4">Сотрудник</div>
                 <div className="col-span-3 text-center">Выплата 1 ({data.fotSettings.payDay1})</div>
@@ -900,6 +1057,49 @@ export default function BudgetSystem() {
                 <button onClick={addEmployee} className="flex items-center gap-1 text-sm text-neutral-400 hover:text-neutral-600 transition-colors">
                   <Plus size={14} /> Добавить сотрудника
                 </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {tab === 'recurring' && (
+          <div className="space-y-4">
+            <div className="bg-amber-50 rounded-xl border border-amber-200 p-4">
+              <div className="flex items-center justify-between">
+                <div>
+                  <div className="text-sm text-amber-600">Постоянные расходы</div>
+                  <div className="text-2xl font-bold text-amber-700">{fmt(totalRecurring)}</div>
+                </div>
+                <div>
+                  <div className="text-sm text-amber-600">Оплачено в этом месяце</div>
+                  <div className="text-2xl font-bold text-emerald-600">{fmt(ddsRecurring)}</div>
+                </div>
+              </div>
+            </div>
+
+            <div className="bg-white rounded-xl border border-neutral-200 overflow-hidden">
+              <div className="divide-y divide-neutral-100">
+                {recurringExpenses.map(expense => (
+                  <div key={expense.id} className="p-4 group">
+                    <div className="flex items-center gap-3 mb-2">
+                      <EditableInput value={expense.name} onSave={(v) => updateRecurringExpense(expense.id, 'name', v)} placeholder="Название" className="flex-1 bg-transparent text-neutral-800 font-medium focus:outline-none focus:bg-neutral-50 rounded px-1" />
+                      <button onClick={() => removeRecurringExpense(expense.id)} className="text-neutral-200 group-hover:text-neutral-400 hover:!text-red-400 transition-colors p-1"><Trash2 size={16} /></button>
+                    </div>
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <div className="text-xs text-neutral-400 mb-1">Сумма</div>
+                        <EditableInput value={expense.amount} onSave={(v) => updateRecurringExpense(expense.id, 'amount', v)} className="w-full bg-neutral-50 rounded-lg px-3 py-2 text-amber-600 font-medium focus:outline-none" />
+                      </div>
+                      <div>
+                        <div className="text-xs text-neutral-400 mb-1">День платежа</div>
+                        <EditableInput type="number" value={expense.day} onSave={(v) => updateRecurringExpense(expense.id, 'day', v)} className="w-full bg-neutral-50 rounded-lg px-3 py-2 text-neutral-700 font-medium focus:outline-none" min="1" max="31" />
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+              <div className="p-3 border-t border-neutral-100">
+                <button onClick={addRecurringExpense} className="flex items-center gap-1 text-sm text-neutral-400 hover:text-neutral-600 transition-colors"><Plus size={14} /> Добавить постоянный расход</button>
               </div>
             </div>
           </div>
