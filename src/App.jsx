@@ -1,13 +1,23 @@
 import React, { useState, useEffect } from 'react';
-import { Check, ChevronLeft, ChevronRight, Plus, Trash2, Users, ArrowDownLeft, ArrowUpRight, CreditCard, TrendingUp, List, Lock, LogOut } from 'lucide-react';
+import { Check, ChevronLeft, ChevronRight, Plus, Trash2, Users, ArrowDownLeft, ArrowUpRight, CreditCard, TrendingUp, List, Lock, LogOut, Target, BarChart3, Folder, X, Sparkles, Send, BookOpen, Edit3, Save } from 'lucide-react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine } from 'recharts';
 import storage from './storage';
 
-const STORAGE_KEY = 'budget-system-v8';
+const STORAGE_KEY = 'budget-system-v9';
 const AUTH_KEY = 'budget-auth';
 const PASSWORD = '1122';
 const MONTHS_SHORT = ['янв', 'фев', 'мар', 'апр', 'май', 'июн', 'июл', 'авг', 'сен', 'окт', 'ноя', 'дек'];
 const MONTHS = ['Январь', 'Февраль', 'Март', 'Апрель', 'Май', 'Июнь', 'Июль', 'Август', 'Сентябрь', 'Октябрь', 'Ноябрь', 'Декабрь'];
+const DAYS_SHORT = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'];
+
+const HABIT_COLORS = {
+  emerald: { bg: 'bg-emerald-100', text: 'text-emerald-600', fill: 'bg-emerald-500', border: 'border-emerald-300' },
+  blue: { bg: 'bg-blue-100', text: 'text-blue-600', fill: 'bg-blue-500', border: 'border-blue-300' },
+  violet: { bg: 'bg-violet-100', text: 'text-violet-600', fill: 'bg-violet-500', border: 'border-violet-300' },
+  amber: { bg: 'bg-amber-100', text: 'text-amber-600', fill: 'bg-amber-500', border: 'border-amber-300' },
+  rose: { bg: 'bg-rose-100', text: 'text-rose-600', fill: 'bg-rose-500', border: 'border-rose-300' },
+  cyan: { bg: 'bg-cyan-100', text: 'text-cyan-600', fill: 'bg-cyan-500', border: 'border-cyan-300' },
+};
 
 // Компонент авторизации
 function LoginScreen({ onLogin }) {
@@ -82,7 +92,6 @@ const defaultData = {
     { id: 5, name: 'Тбанк', balance: 0 },
     { id: 6, name: 'Сбер', balance: 0 },
   ],
-  // Сотрудники - только имена
   employees: [
     { id: 1, name: 'Саша' },
     { id: 2, name: 'Вадим' },
@@ -102,15 +111,12 @@ const defaultData = {
     { id: 6, name: 'Сбер Кредитка', totalDebt: 200000, monthlyPayment: 11000, day: 30 },
     { id: 7, name: 'Альфа кредит', totalDebt: 300000, monthlyPayment: 19400, day: 30 },
   ],
-  // Постоянные расходы (ежемесячные)
   recurringExpenses: [
     { id: 1, name: 'Питание', amount: 80000, day: 1 },
     { id: 2, name: 'Бассейн Теодор', amount: 15600, day: 1 },
     { id: 3, name: 'Развивашки Теодор', amount: 9000, day: 5 },
   ],
-  // ДДС - движение денежных средств (выполненные операции)
   dds: {},
-  // Зарплаты по месяцам: { '2026-03': { empId: { pay1: 10000, pay2: 10000 } } }
   salaries: {
     '2026-03': {
       1: { pay1: 14825, pay2: 14825 },
@@ -142,6 +148,17 @@ const defaultData = {
       ],
     },
   },
+  // Привычки
+  habitGroups: [
+    { id: 1, name: 'Здоровье', color: 'emerald' },
+    { id: 2, name: 'Продуктивность', color: 'blue' },
+  ],
+  habits: [
+    { id: 1, name: 'Зарядка', groupId: 1, createdAt: '2026-03-01' },
+    { id: 2, name: 'Читать 30 мин', groupId: 2, createdAt: '2026-03-01' },
+  ],
+  habitCompletions: {},
+  journal: {},
 };
 
 export default function BudgetSystem() {
@@ -476,6 +493,129 @@ export default function BudgetSystem() {
   const isRecurringPaid = (id) => (data.dds?.[selectedMonth] || []).some(d => d.type === 'recurring' && d.recurringId === id);
   const isRecurringSkipped = (id) => data.skippedRecurring?.[selectedMonth]?.includes(id);
 
+  // === ПРИВЫЧКИ ===
+  const [habitView, setHabitView] = useState('week');
+  const [showAddHabit, setShowAddHabit] = useState(false);
+  const [showAddHabitGroup, setShowAddHabitGroup] = useState(false);
+  const [newHabit, setNewHabit] = useState({ name: '', groupId: null });
+  const [newHabitGroup, setNewHabitGroup] = useState({ name: '', color: 'emerald' });
+  const [editingGroup, setEditingGroup] = useState(null);
+  const [quote, setQuote] = useState('Каждый день — новая возможность стать лучше.');
+  const [quoteLoading, setQuoteLoading] = useState(false);
+  const [journalText, setJournalText] = useState('');
+  const [aiResponse, setAiResponse] = useState('');
+  const [aiLoading, setAiLoading] = useState(false);
+  const [selectedJournalDate, setSelectedJournalDate] = useState(null);
+
+  const todayKey = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+  const fmtDate = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+
+  const loadQuote = async () => {
+    setQuoteLoading(true);
+    try {
+      const res = await fetch("https://api.anthropic.com/v1/messages", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ model: "claude-sonnet-4-20250514", max_tokens: 100,
+          messages: [{ role: "user", content: "Напиши одну короткую мотивирующую цитату на русском для человека работающего над привычками. Только цитату, без кавычек, 1-2 предложения." }]
+        })
+      });
+      const result = await res.json();
+      setQuote(result.content?.[0]?.text || 'Маленькие шаги ведут к большим переменам.');
+    } catch { setQuote('Маленькие шаги каждый день ведут к большим переменам.'); }
+    setQuoteLoading(false);
+  };
+
+  const sendJournal = async () => {
+    if (!journalText.trim() || !data) return;
+    setAiLoading(true);
+    let aiText = '';
+    try {
+      const res = await fetch("https://api.anthropic.com/v1/messages", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ model: "claude-sonnet-4-20250514", max_tokens: 200,
+          messages: [{ role: "user", content: `Ты коуч по привычкам. Пользователь написал отчёт о дне: "${journalText}". Дай короткий тёплый ответ (2-3 предложения), отметь хорошее и дай совет. На русском.` }]
+        })
+      });
+      const result = await res.json();
+      aiText = result.content?.[0]?.text || 'Отлично! Продолжай в том же духе.';
+    } catch { aiText = 'Спасибо за отчёт! Продолжай работать над собой.'; }
+    setAiResponse(aiText);
+    const newData = { ...data };
+    if (!newData.journal) newData.journal = {};
+    newData.journal[todayKey] = { text: journalText, aiResponse: aiText, time: today.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' }) };
+    save(newData);
+    setAiLoading(false);
+  };
+
+  const getWeekDays = (date) => {
+    const start = new Date(date);
+    const day = start.getDay();
+    start.setDate(start.getDate() - day + (day === 0 ? -6 : 1));
+    return Array.from({ length: 7 }, (_, i) => { const d = new Date(start); d.setDate(start.getDate() + i); return d; });
+  };
+
+  const getMonthDaysHabits = (date) => {
+    const year = date.getFullYear(), month = date.getMonth();
+    const lastDay = new Date(year, month + 1, 0).getDate();
+    return Array.from({ length: lastDay }, (_, i) => new Date(year, month, i + 1));
+  };
+
+  const toggleHabitCompletion = (habitId, date) => {
+    const key = fmtDate(date);
+    const newData = { ...data, habitCompletions: { ...data.habitCompletions } };
+    if (!newData.habitCompletions[key]) newData.habitCompletions[key] = [];
+    if (newData.habitCompletions[key].includes(habitId)) {
+      newData.habitCompletions[key] = newData.habitCompletions[key].filter(id => id !== habitId);
+    } else {
+      newData.habitCompletions[key] = [...newData.habitCompletions[key], habitId];
+    }
+    save(newData);
+  };
+
+  const isHabitCompleted = (habitId, date) => data?.habitCompletions?.[fmtDate(date)]?.includes(habitId) || false;
+
+  const addHabit = () => {
+    if (!newHabit.name.trim() || !data) return;
+    const newData = { ...data };
+    if (!newData.habits) newData.habits = [];
+    newData.habits.push({ id: Date.now(), name: newHabit.name, groupId: newHabit.groupId || data.habitGroups?.[0]?.id, createdAt: todayKey });
+    save(newData);
+    setNewHabit({ name: '', groupId: null });
+    setShowAddHabit(false);
+  };
+
+  const removeHabit = (id) => {
+    const newData = { ...data, habits: data.habits.filter(h => h.id !== id) };
+    save(newData);
+  };
+
+  const addHabitGroup = () => {
+    if (!newHabitGroup.name.trim() || !data) return;
+    const newData = { ...data };
+    if (!newData.habitGroups) newData.habitGroups = [];
+    newData.habitGroups.push({ id: Date.now(), ...newHabitGroup });
+    save(newData);
+    setNewHabitGroup({ name: '', color: 'emerald' });
+    setShowAddHabitGroup(false);
+  };
+
+  const updateHabitGroup = (id, updates) => {
+    const newData = { ...data, habitGroups: data.habitGroups.map(g => g.id === id ? { ...g, ...updates } : g) };
+    save(newData);
+  };
+
+  const removeHabitGroup = (id) => {
+    const newData = { ...data, habitGroups: data.habitGroups.filter(g => g.id !== id), habits: data.habits.filter(h => h.groupId !== id) };
+    save(newData);
+  };
+
+  const deleteJournalEntry = (date) => {
+    const newData = { ...data };
+    delete newData.journal[date];
+    save(newData);
+    if (selectedJournalDate === date) setSelectedJournalDate(null);
+  };
+
   if (!authChecked) return <div className="min-h-screen bg-neutral-50 flex items-center justify-center text-neutral-400">Загрузка...</div>;
   
   if (!isAuthenticated) return <LoginScreen onLogin={handleLogin} />;
@@ -755,16 +895,17 @@ export default function BudgetSystem() {
             <div className="flex items-center gap-1 bg-neutral-100 rounded-lg p-1 min-w-max">
               {[
                 { id: 'budget', label: 'Бюджет', icon: '📊' },
+                { id: 'habits', label: 'Привычки', icon: '✅' },
+                { id: 'journal', label: 'Дневник', icon: '📝' },
                 { id: 'employees', label: 'Сотрудники', icon: '👥' },
                 { id: 'recurring', label: 'Пост.', icon: '🔄' },
                 { id: 'credits', label: 'Кредиты', icon: '💳' },
                 { id: 'dds', label: 'ДДС', icon: '📋' },
-                { id: 'calendar', label: 'Календарь', icon: '📅' },
               ].map(t => (
                 <button key={t.id} onClick={() => setTab(t.id)} className={`px-2 sm:px-3 py-1.5 rounded-md text-xs sm:text-sm transition-all whitespace-nowrap ${tab === t.id ? 'bg-white text-neutral-800 shadow-sm font-medium' : 'text-neutral-500 hover:text-neutral-700'}`}>
                   <span className="sm:hidden">{t.icon}</span>
                   <span className="hidden sm:inline">{t.label}</span>
-                  <span className="sm:hidden ml-1">{t.id === 'recurring' ? 'Пост.' : t.id === 'employees' ? 'Сотр.' : t.label}</span>
+                  <span className="sm:hidden ml-1">{t.id === 'recurring' ? 'Пост.' : t.id === 'employees' ? 'Сотр.' : t.id === 'habits' ? 'Прив.' : t.id === 'journal' ? 'Днев.' : t.label}</span>
                   {t.id === 'dds' && dds.length > 0 && <span className="ml-1 text-[10px] sm:text-xs bg-emerald-500 text-white px-1 sm:px-1.5 rounded-full">{dds.length}</span>}
                 </button>
               ))}
@@ -1212,46 +1353,276 @@ export default function BudgetSystem() {
           </div>
         )}
 
-        {tab === 'calendar' && (
-          <div className="bg-white rounded-xl border border-neutral-200 overflow-hidden">
-            <div className="grid grid-cols-7 border-b border-neutral-200 bg-neutral-50">
-              {['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'].map(d => (
-                <div key={d} className="text-center text-xs text-neutral-500 py-2 font-medium">{d}</div>
-              ))}
+        {/* ПРИВЫЧКИ */}
+        {tab === 'habits' && (
+          <div className="space-y-4">
+            {/* AI Quote */}
+            <div className="bg-gradient-to-r from-violet-500 to-blue-500 rounded-xl p-4 text-white">
+              <div className="flex items-start gap-3">
+                <Sparkles size={20} />
+                <div className="flex-1">
+                  <div className="text-xs opacity-80 mb-1">Мысль дня</div>
+                  <p className="text-sm font-medium">{quoteLoading ? '...' : quote}</p>
+                </div>
+                <button onClick={loadQuote} className="p-1.5 hover:bg-white/20 rounded-lg">
+                  <Sparkles size={14} className={quoteLoading ? 'animate-spin' : ''} />
+                </button>
+              </div>
             </div>
-            <div className="grid grid-cols-7">
-              {Array.from({ length: firstDay }, (_, i) => (
-                <div key={`e-${i}`} className="aspect-square border-b border-r border-neutral-100 bg-neutral-50/50"></div>
-              ))}
-              {Array.from({ length: daysInMonth }, (_, i) => {
-                const day = i + 1;
-                const dayItems = getAllItemsForDay(day);
-                return (
-                  <div key={day} className="min-h-[100px] border-b border-r border-neutral-100 p-1.5 hover:bg-neutral-50 transition-colors">
-                    <div className="text-xs font-medium text-neutral-400 mb-1">{day}</div>
-                    <div className="space-y-0.5">
-                      {dayItems.slice(0, 5).map((it, idx) => (
-                        <div key={idx} className={`text-[10px] leading-tight px-1.5 py-0.5 rounded truncate ${
-                          it.done ? 'bg-neutral-100 text-neutral-400 line-through' :
-                          it.type === 'income' ? 'bg-emerald-100 text-emerald-700' :
-                          it.type === 'fot' || it.type === 'salary' ? 'bg-violet-100 text-violet-700' :
-                          it.type === 'credit' ? 'bg-rose-100 text-rose-700' :
-                          it.type === 'debt' ? 'bg-orange-100 text-orange-700' :
-                          'bg-amber-100 text-amber-700'
-                        }`}>{it.name || '—'}</div>
+
+            {/* Today Stats */}
+            <div className="bg-white rounded-xl border-2 border-blue-200 p-4">
+              <div className="flex items-center justify-between">
+                <div>
+                  <div className="text-sm text-blue-600 font-medium">Сегодня</div>
+                  <div className="text-2xl font-bold">
+                    {(data.habits || []).filter(h => isHabitCompleted(h.id, today)).length}
+                    <span className="text-neutral-400 text-lg font-normal"> / {(data.habits || []).length}</span>
+                  </div>
+                </div>
+                <button onClick={() => setShowAddHabit(true)} className="px-3 py-2 bg-blue-500 text-white rounded-lg text-sm font-medium flex items-center gap-1">
+                  <Plus size={16} /> Привычка
+                </button>
+              </div>
+            </div>
+
+            {/* View Toggle */}
+            <div className="flex items-center justify-between">
+              <div className="flex bg-neutral-100 rounded-lg p-1">
+                <button onClick={() => setHabitView('week')} className={`px-3 py-1 rounded text-sm ${habitView === 'week' ? 'bg-white shadow font-medium' : 'text-neutral-500'}`}>Неделя</button>
+                <button onClick={() => setHabitView('month')} className={`px-3 py-1 rounded text-sm ${habitView === 'month' ? 'bg-white shadow font-medium' : 'text-neutral-500'}`}>Месяц</button>
+                <button onClick={() => setHabitView('groups')} className={`px-3 py-1 rounded text-sm ${habitView === 'groups' ? 'bg-white shadow font-medium' : 'text-neutral-500'}`}>Группы</button>
+              </div>
+            </div>
+
+            {/* Week View */}
+            {habitView === 'week' && (() => {
+              const weekDays = getWeekDays(today);
+              const groups = data.habitGroups || [];
+              const habits = data.habits || [];
+              return (
+                <div className="bg-white rounded-xl border overflow-hidden">
+                  <div className="grid grid-cols-8 border-b">
+                    <div className="p-2"></div>
+                    {weekDays.map((day, i) => {
+                      const isToday = fmtDate(day) === todayKey;
+                      return (
+                        <div key={i} className={`p-2 text-center ${isToday ? 'bg-blue-500 text-white' : ''}`}>
+                          <div className={`text-[10px] ${isToday ? 'text-blue-100' : 'text-neutral-400'}`}>{DAYS_SHORT[i]}</div>
+                          <div className="text-sm font-bold">{day.getDate()}</div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                  {groups.map(group => {
+                    const groupHabits = habits.filter(h => h.groupId === group.id);
+                    if (groupHabits.length === 0) return null;
+                    return (
+                      <div key={group.id}>
+                        <div className={`px-3 py-1 ${HABIT_COLORS[group.color].bg} text-xs font-medium ${HABIT_COLORS[group.color].text}`}>{group.name}</div>
+                        {groupHabits.map(habit => (
+                          <div key={habit.id} className="grid grid-cols-8 border-b last:border-0">
+                            <div className="p-2 text-sm truncate flex items-center gap-1 group">
+                              <span className="truncate">{habit.name}</span>
+                              <button onClick={() => removeHabit(habit.id)} className="opacity-0 group-hover:opacity-100 p-0.5"><Trash2 size={10} className="text-neutral-300 hover:text-red-400" /></button>
+                            </div>
+                            {weekDays.map((day, i) => {
+                              const done = isHabitCompleted(habit.id, day);
+                              const isToday = fmtDate(day) === todayKey;
+                              const future = day > today;
+                              return (
+                                <div key={i} className={`p-2 flex justify-center ${isToday ? 'bg-blue-50' : ''}`}>
+                                  <button onClick={() => !future && toggleHabitCompletion(habit.id, day)} disabled={future} 
+                                    className={`w-6 h-6 rounded flex items-center justify-center ${done ? `${HABIT_COLORS[group.color].fill} text-white` : future ? 'bg-neutral-100' : `border-2 ${HABIT_COLORS[group.color].border}`}`}>
+                                    {done && <Check size={12} />}
+                                  </button>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        ))}
+                      </div>
+                    );
+                  })}
+                  {habits.length === 0 && <div className="p-8 text-center text-neutral-400 text-sm">Нет привычек. Добавьте первую!</div>}
+                </div>
+              );
+            })()}
+
+            {/* Month View */}
+            {habitView === 'month' && (() => {
+              const monthDays = getMonthDaysHabits(today);
+              const groups = data.habitGroups || [];
+              const habits = data.habits || [];
+              return (
+                <div className="space-y-3">
+                  {groups.map(group => {
+                    const groupHabits = habits.filter(h => h.groupId === group.id);
+                    if (groupHabits.length === 0) return null;
+                    return (
+                      <div key={group.id} className="bg-white rounded-xl border overflow-hidden">
+                        <div className={`px-3 py-2 ${HABIT_COLORS[group.color].bg} text-sm font-medium ${HABIT_COLORS[group.color].text}`}>{group.name}</div>
+                        {groupHabits.map(habit => (
+                          <div key={habit.id} className="p-3 border-t">
+                            <div className="text-sm font-medium mb-2">{habit.name}</div>
+                            <div className="grid grid-cols-7 gap-1">
+                              {monthDays.map((day, i) => {
+                                const done = isHabitCompleted(habit.id, day);
+                                const isToday = fmtDate(day) === todayKey;
+                                const future = day > today;
+                                return (
+                                  <button key={i} onClick={() => !future && toggleHabitCompletion(habit.id, day)} disabled={future}
+                                    className={`aspect-square rounded text-[10px] flex items-center justify-center ${
+                                      done ? `${HABIT_COLORS[group.color].fill} text-white` :
+                                      isToday ? 'ring-2 ring-blue-500 bg-blue-50 text-blue-600 font-bold' :
+                                      future ? 'bg-neutral-50 text-neutral-300' :
+                                      'bg-neutral-100 text-neutral-500 hover:bg-neutral-200'
+                                    }`}>
+                                    {day.getDate()}
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    );
+                  })}
+                </div>
+              );
+            })()}
+
+            {/* Groups View */}
+            {habitView === 'groups' && (
+              <div className="space-y-3">
+                <div className="flex justify-end">
+                  <button onClick={() => setShowAddHabitGroup(true)} className="px-3 py-2 bg-neutral-100 hover:bg-neutral-200 rounded-lg text-sm flex items-center gap-1">
+                    <Plus size={16} /> Группа
+                  </button>
+                </div>
+                {(data.habitGroups || []).map(group => (
+                  <div key={group.id} className="bg-white rounded-xl border p-4">
+                    <div className="flex items-center gap-3 mb-3">
+                      <div className={`w-4 h-4 rounded-full ${HABIT_COLORS[group.color].fill}`}></div>
+                      {editingGroup === group.id ? (
+                        <input type="text" value={group.name} onChange={e => updateHabitGroup(group.id, { name: e.target.value })} className="flex-1 px-2 py-1 border rounded" autoFocus />
+                      ) : (
+                        <span className="flex-1 font-medium">{group.name}</span>
+                      )}
+                      <div className="flex gap-1">
+                        {editingGroup === group.id ? (
+                          <button onClick={() => setEditingGroup(null)} className="p-1.5 hover:bg-neutral-100 rounded"><Save size={16} className="text-emerald-500" /></button>
+                        ) : (
+                          <button onClick={() => setEditingGroup(group.id)} className="p-1.5 hover:bg-neutral-100 rounded"><Edit3 size={16} className="text-neutral-400" /></button>
+                        )}
+                        <button onClick={() => removeHabitGroup(group.id)} className="p-1.5 hover:bg-red-50 rounded"><Trash2 size={16} className="text-neutral-400 hover:text-red-400" /></button>
+                      </div>
+                    </div>
+                    {editingGroup === group.id && (
+                      <div className="flex gap-2 mb-3 pb-3 border-b">
+                        {Object.keys(HABIT_COLORS).map(c => (
+                          <button key={c} onClick={() => updateHabitGroup(group.id, { color: c })} 
+                            className={`w-6 h-6 rounded-full ${HABIT_COLORS[c].fill} ${group.color === c ? 'ring-2 ring-offset-2 ring-neutral-400' : ''}`} />
+                        ))}
+                      </div>
+                    )}
+                    <div className="space-y-1">
+                      {(data.habits || []).filter(h => h.groupId === group.id).map(habit => (
+                        <div key={habit.id} className="flex items-center justify-between py-1 text-sm text-neutral-600">
+                          <span>{habit.name}</span>
+                          <button onClick={() => removeHabit(habit.id)} className="p-1 hover:bg-red-50 rounded"><Trash2 size={12} className="text-neutral-300 hover:text-red-400" /></button>
+                        </div>
                       ))}
-                      {dayItems.length > 5 && <div className="text-[10px] text-neutral-400 pl-1">+{dayItems.length - 5}</div>}
                     </div>
                   </div>
-                );
-              })}
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* ДНЕВНИК */}
+        {tab === 'journal' && (
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="bg-white rounded-xl border p-4">
+              <div className="flex items-center justify-between mb-3">
+                <h2 className="font-semibold">Сегодня, {today.getDate()} {MONTHS_SHORT[today.getMonth()]}</h2>
+                {data.journal?.[todayKey] && <span className="text-xs text-neutral-400">Сохранено</span>}
+              </div>
+              <textarea value={journalText} onChange={e => setJournalText(e.target.value)} placeholder="Как прошёл твой день?" className="w-full px-3 py-2 rounded-lg border mb-3 h-32 resize-none focus:outline-none focus:border-blue-400 text-sm" />
+              <button onClick={sendJournal} disabled={aiLoading || !journalText.trim()} className="w-full py-2 bg-violet-500 hover:bg-violet-600 disabled:bg-neutral-300 text-white rounded-lg font-medium flex items-center justify-center gap-2 text-sm">
+                {aiLoading ? <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" /> : <><Send size={16} />Сохранить</>}
+              </button>
+              {aiResponse && (
+                <div className="bg-violet-50 rounded-xl p-3 border border-violet-200 mt-3">
+                  <div className="flex items-center gap-2 mb-2"><Sparkles size={14} className="text-violet-500" /><span className="text-xs font-medium text-violet-700">Ответ AI</span></div>
+                  <p className="text-sm text-neutral-700">{aiResponse}</p>
+                </div>
+              )}
             </div>
-            <div className="flex flex-wrap gap-4 p-3 border-t border-neutral-200 bg-neutral-50">
-              <div className="flex items-center gap-1.5 text-xs"><div className="w-2.5 h-2.5 rounded-sm bg-emerald-400"></div><span className="text-neutral-500">Приходы</span></div>
-              <div className="flex items-center gap-1.5 text-xs"><div className="w-2.5 h-2.5 rounded-sm bg-violet-400"></div><span className="text-neutral-500">ФОТ</span></div>
-              <div className="flex items-center gap-1.5 text-xs"><div className="w-2.5 h-2.5 rounded-sm bg-amber-400"></div><span className="text-neutral-500">Расходы</span></div>
-              <div className="flex items-center gap-1.5 text-xs"><div className="w-2.5 h-2.5 rounded-sm bg-rose-400"></div><span className="text-neutral-500">Кредиты</span></div>
-              <div className="flex items-center gap-1.5 text-xs"><div className="w-2.5 h-2.5 rounded-sm bg-orange-400"></div><span className="text-neutral-500">Долги</span></div>
+            <div className="bg-white rounded-xl border p-4">
+              <h2 className="font-semibold mb-3">История</h2>
+              {Object.keys(data.journal || {}).length === 0 ? (
+                <div className="text-center py-8 text-neutral-400 text-sm">Записей пока нет</div>
+              ) : selectedJournalDate ? (
+                <div>
+                  <button onClick={() => setSelectedJournalDate(null)} className="text-sm text-blue-500 mb-3 flex items-center gap-1"><ChevronLeft size={16} /> Назад</button>
+                  <div className="text-sm font-medium mb-1">{(() => { const d = new Date(selectedJournalDate); return `${d.getDate()} ${MONTHS_SHORT[d.getMonth()]}`; })()}</div>
+                  <div className="bg-neutral-50 rounded-lg p-3 mb-3"><p className="text-sm whitespace-pre-wrap">{data.journal[selectedJournalDate]?.text}</p></div>
+                  {data.journal[selectedJournalDate]?.aiResponse && (
+                    <div className="bg-violet-50 rounded-lg p-3 border border-violet-200">
+                      <div className="flex items-center gap-2 mb-2"><Sparkles size={14} className="text-violet-500" /><span className="text-xs font-medium text-violet-700">AI</span></div>
+                      <p className="text-sm">{data.journal[selectedJournalDate]?.aiResponse}</p>
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <div className="space-y-2 max-h-80 overflow-y-auto">
+                  {Object.entries(data.journal || {}).sort(([a], [b]) => b.localeCompare(a)).map(([date, entry]) => (
+                    <div key={date} className="flex items-start gap-2 bg-neutral-50 hover:bg-neutral-100 rounded-lg p-3">
+                      <button onClick={() => setSelectedJournalDate(date)} className="flex-1 text-left">
+                        <div className="text-sm font-medium">{(() => { const d = new Date(date); return `${d.getDate()} ${MONTHS_SHORT[d.getMonth()]}`; })()}</div>
+                        <p className="text-xs text-neutral-500 line-clamp-2">{entry.text}</p>
+                      </button>
+                      <button onClick={() => deleteJournalEntry(date)} className="p-1 hover:bg-red-100 rounded"><Trash2 size={14} className="text-neutral-300 hover:text-red-400" /></button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* Add Habit Modal */}
+        {showAddHabit && (
+          <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
+            <div className="bg-white rounded-2xl w-full max-w-sm p-4">
+              <div className="flex justify-between mb-4"><h2 className="text-lg font-semibold">Новая привычка</h2><button onClick={() => setShowAddHabit(false)}><X size={20} className="text-neutral-400" /></button></div>
+              <input value={newHabit.name} onChange={e => setNewHabit({ ...newHabit, name: e.target.value })} placeholder="Название" className="w-full px-3 py-2 rounded-lg border mb-3" autoFocus />
+              <div className="text-sm text-neutral-500 mb-2">Группа</div>
+              <div className="flex flex-wrap gap-2 mb-4">
+                {(data.habitGroups || []).map(g => (
+                  <button key={g.id} onClick={() => setNewHabit({ ...newHabit, groupId: g.id })} className={`px-3 py-1.5 rounded-lg text-sm ${newHabit.groupId === g.id ? `${HABIT_COLORS[g.color].fill} text-white` : `${HABIT_COLORS[g.color].bg} ${HABIT_COLORS[g.color].text}`}`}>{g.name}</button>
+                ))}
+              </div>
+              <button onClick={addHabit} className="w-full py-2 bg-blue-500 text-white rounded-lg font-medium">Добавить</button>
+            </div>
+          </div>
+        )}
+
+        {/* Add Group Modal */}
+        {showAddHabitGroup && (
+          <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
+            <div className="bg-white rounded-2xl w-full max-w-sm p-4">
+              <div className="flex justify-between mb-4"><h2 className="text-lg font-semibold">Новая группа</h2><button onClick={() => setShowAddHabitGroup(false)}><X size={20} className="text-neutral-400" /></button></div>
+              <input value={newHabitGroup.name} onChange={e => setNewHabitGroup({ ...newHabitGroup, name: e.target.value })} placeholder="Название" className="w-full px-3 py-2 rounded-lg border mb-3" autoFocus />
+              <div className="text-sm text-neutral-500 mb-2">Цвет</div>
+              <div className="flex gap-2 mb-4">
+                {Object.keys(HABIT_COLORS).map(c => (
+                  <button key={c} onClick={() => setNewHabitGroup({ ...newHabitGroup, color: c })} className={`w-8 h-8 rounded-full ${HABIT_COLORS[c].fill} ${newHabitGroup.color === c ? 'ring-2 ring-offset-2 ring-neutral-400' : ''}`} />
+                ))}
+              </div>
+              <button onClick={addHabitGroup} className="w-full py-2 bg-blue-500 text-white rounded-lg font-medium">Добавить</button>
             </div>
           </div>
         )}
