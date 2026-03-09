@@ -887,20 +887,21 @@ export default function BudgetSystem() {
     );
   };
 
-  const Row = ({ item, type, onDone, onSkip, onUpdate, onRemove, color }) => (
-    <div className="flex items-center gap-1 sm:gap-2 py-2 sm:py-2.5 border-b border-neutral-100 last:border-0 group">
+  const Row = ({ item, type, onDone, onSkip, onUpdate, onRemove, color, isOverdue }) => (
+    <div className={`flex items-center gap-1 sm:gap-2 py-2 sm:py-2.5 border-b border-neutral-100 last:border-0 group ${isOverdue ? 'bg-red-50' : ''}`}>
       <button onClick={onDone} className="w-5 h-5 rounded border-2 border-emerald-300 hover:border-emerald-500 hover:bg-emerald-50 flex items-center justify-center transition-all flex-shrink-0" title="Оплачено">
         <Check size={10} className="text-emerald-400 group-hover:text-emerald-600 sm:w-3 sm:h-3" />
       </button>
       <button onClick={onSkip} className="w-5 h-5 rounded border-2 border-orange-300 hover:border-orange-500 hover:bg-orange-50 flex items-center justify-center transition-all flex-shrink-0 text-[10px] font-bold text-orange-400 hover:text-orange-600" title="Пропустить → в долг">
         ✕
       </button>
+      {isOverdue && <span className="text-red-500 text-sm" title="Просрочено!">⚠️</span>}
       <div className="w-10 sm:w-16 flex-shrink-0">
         <EditableInput 
           type="number" 
           value={item.day} 
           onSave={(v) => onUpdate('day', v)} 
-          className="w-6 sm:w-8 text-center text-xs sm:text-sm bg-neutral-100 rounded px-0.5 sm:px-1 py-0.5 text-neutral-600 focus:outline-none focus:ring-2 focus:ring-blue-300" 
+          className={`w-6 sm:w-8 text-center text-xs sm:text-sm rounded px-0.5 sm:px-1 py-0.5 focus:outline-none focus:ring-2 focus:ring-blue-300 ${isOverdue ? 'bg-red-100 text-red-600' : 'bg-neutral-100 text-neutral-600'}`}
           min="1" 
           max="31" 
         />
@@ -910,12 +911,12 @@ export default function BudgetSystem() {
         value={item.name} 
         onSave={(v) => onUpdate('name', v)} 
         placeholder="Название" 
-        className="flex-1 bg-transparent focus:outline-none focus:bg-neutral-50 rounded px-1 min-w-0 text-xs sm:text-sm text-neutral-700" 
+        className={`flex-1 bg-transparent focus:outline-none focus:bg-neutral-50 rounded px-1 min-w-0 text-xs sm:text-sm ${isOverdue ? 'text-red-700 font-medium' : 'text-neutral-700'}`}
       />
       <EditableInput 
         value={item.amount} 
         onSave={(v) => onUpdate('amount', v)} 
-        className={`w-16 sm:w-28 text-right bg-transparent focus:outline-none focus:bg-neutral-50 rounded px-1 text-xs sm:text-sm font-medium flex-shrink-0 ${color}`} 
+        className={`w-16 sm:w-28 text-right bg-transparent focus:outline-none focus:bg-neutral-50 rounded px-1 text-xs sm:text-sm font-medium flex-shrink-0 ${isOverdue ? 'text-red-600' : color}`} 
       />
       <button onClick={onRemove} className="text-neutral-200 group-hover:text-neutral-400 hover:!text-red-400 transition-colors p-0.5 sm:p-1 flex-shrink-0">
         <Trash2 size={12} className="sm:w-[14px] sm:h-[14px]" />
@@ -923,20 +924,38 @@ export default function BudgetSystem() {
     </div>
   );
 
-  const Section = ({ title, icon: Icon, items, type, bgColor, iconColor, textColor, isIncome }) => {
+  // Проверка просрочки - только для текущего месяца
+  const isCurrentMonth = selectedMonth === currentMonthKey;
+  const isOverdueItem = (item) => isCurrentMonth && item.day < currentDay;
+
+  const Section = ({ title, icon: Icon, items, type, bgColor, iconColor, textColor, isIncome, overdueItems = [] }) => {
     const total = items.reduce((s, i) => s + i.amount, 0);
+    const overdueTotal = overdueItems.reduce((s, i) => s + i.amount, 0);
+    const hasOverdue = overdueItems.length > 0;
+    
     return (
       <div className="bg-white rounded-xl border border-neutral-200 overflow-hidden">
         <div className="flex items-center justify-between px-3 sm:px-4 py-2 sm:py-3 bg-neutral-50 border-b border-neutral-100">
           <div className="flex items-center gap-1.5 sm:gap-2">
             <div className={`w-5 h-5 sm:w-6 sm:h-6 rounded-md ${bgColor} flex items-center justify-center`}><Icon size={12} className={`${iconColor} sm:w-[14px] sm:h-[14px]`} /></div>
             <span className="font-medium text-neutral-700 text-sm sm:text-base">{title}</span>
+            {hasOverdue && <span className="text-red-500 text-xs">⚠️ {overdueItems.length} просрочено</span>}
           </div>
           <span className={`text-xs sm:text-sm font-medium ${textColor}`}>{fmt(total)}</span>
         </div>
         <div className="px-2 sm:px-4 py-1">
-          {items.sort((a, b) => a.day - b.day).map(item => (
-            <Row key={item.id} item={item} type={type} color={textColor}
+          {/* Просроченные сверху */}
+          {overdueItems.sort((a, b) => a.day - b.day).map(item => (
+            <Row key={item.id} item={item} type={type} color={textColor} isOverdue={true}
+              onDone={() => markDone(type, item)}
+              onSkip={() => skipPayment(type, item)}
+              onUpdate={(field, value) => update(type, item.id, field, value)}
+              onRemove={() => remove(type, item.id)}
+            />
+          ))}
+          {/* Обычные */}
+          {items.filter(i => !overdueItems.find(o => o.id === i.id)).sort((a, b) => a.day - b.day).map(item => (
+            <Row key={item.id} item={item} type={type} color={textColor} isOverdue={false}
               onDone={() => markDone(type, item)}
               onSkip={() => skipPayment(type, item)}
               onUpdate={(field, value) => update(type, item.id, field, value)}
@@ -1199,9 +1218,37 @@ export default function BudgetSystem() {
 
         {tab === 'budget' && (
           <div className="space-y-4">
-            <Section title="Приходы" icon={ArrowDownLeft} items={md.income || []} type="income" bgColor="bg-emerald-100" iconColor="text-emerald-600" textColor="text-emerald-600" isIncome />
-            <Section title="Расходы" icon={ArrowUpRight} items={md.expenses || []} type="expenses" bgColor="bg-amber-100" iconColor="text-amber-600" textColor="text-amber-600" />
-            <Section title="Долги (разовые)" icon={CreditCard} items={md.debts || []} type="debts" bgColor="bg-orange-100" iconColor="text-orange-600" textColor="text-orange-600" />
+            <Section 
+              title="Приходы" 
+              icon={ArrowDownLeft} 
+              items={md.income || []} 
+              type="income" 
+              bgColor="bg-emerald-100" 
+              iconColor="text-emerald-600" 
+              textColor="text-emerald-600" 
+              isIncome 
+              overdueItems={(md.income || []).filter(i => isOverdueItem(i))}
+            />
+            <Section 
+              title="Расходы" 
+              icon={ArrowUpRight} 
+              items={md.expenses || []} 
+              type="expenses" 
+              bgColor="bg-amber-100" 
+              iconColor="text-amber-600" 
+              textColor="text-amber-600" 
+              overdueItems={(md.expenses || []).filter(i => isOverdueItem(i))}
+            />
+            <Section 
+              title="Долги (разовые)" 
+              icon={CreditCard} 
+              items={md.debts || []} 
+              type="debts" 
+              bgColor="bg-red-100" 
+              iconColor="text-red-600" 
+              textColor="text-red-600" 
+              overdueItems={(md.debts || []).filter(i => isOverdueItem(i))}
+            />
             
             {/* ФОТ */}
             <div className="bg-white rounded-xl border border-neutral-200 overflow-hidden">
@@ -1236,27 +1283,34 @@ export default function BudgetSystem() {
                 <div className="flex items-center gap-2">
                   <div className="w-6 h-6 rounded-md bg-amber-100 flex items-center justify-center"><ArrowUpRight size={14} className="text-amber-600" /></div>
                   <span className="font-medium text-neutral-700">Постоянные расходы</span>
+                  {isCurrentMonth && recurringExpenses.filter(e => !isRecurringPaid(e.id) && !isRecurringSkipped(e.id) && e.day < currentDay).length > 0 && (
+                    <span className="text-red-500 text-xs">⚠️ просрочено</span>
+                  )}
                 </div>
                 <span className="text-sm font-medium text-amber-600">{fmt(planRecurring)}</span>
               </div>
               <div className="px-4 py-1">
-                {recurringExpenses.filter(e => !isRecurringPaid(e.id) && !isRecurringSkipped(e.id)).sort((a, b) => a.day - b.day).map(expense => (
-                  <div key={expense.id} className="flex items-center gap-2 py-2.5 border-b border-neutral-100 last:border-0 group">
+                {recurringExpenses.filter(e => !isRecurringPaid(e.id) && !isRecurringSkipped(e.id)).sort((a, b) => a.day - b.day).map(expense => {
+                  const isOverdue = isCurrentMonth && expense.day < currentDay;
+                  return (
+                  <div key={expense.id} className={`flex items-center gap-2 py-2.5 border-b border-neutral-100 last:border-0 group ${isOverdue ? 'bg-red-50' : ''}`}>
                     <button onClick={() => markRecurringExpenseDone(expense)} className="w-5 h-5 rounded border-2 border-emerald-300 hover:border-emerald-500 hover:bg-emerald-50 flex items-center justify-center transition-all flex-shrink-0" title="Оплачено">
                       <Check size={12} className="text-emerald-400 group-hover:text-emerald-600" />
                     </button>
                     <button onClick={() => skipRecurringExpense(expense)} className="w-5 h-5 rounded border-2 border-orange-300 hover:border-orange-500 hover:bg-orange-50 flex items-center justify-center transition-all flex-shrink-0 text-[10px] font-bold text-orange-400 hover:text-orange-600" title="Пропустить → в долг">
                       ✕
                     </button>
+                    {isOverdue && <span className="text-red-500">⚠️</span>}
                     <div className="w-16 flex-shrink-0">
-                      <span className="text-sm text-neutral-600">{String(expense.day).padStart(2, '0')}</span>
+                      <span className={`text-sm ${isOverdue ? 'text-red-600 font-medium' : 'text-neutral-600'}`}>{String(expense.day).padStart(2, '0')}</span>
                       <span className="text-xs text-neutral-400 ml-1">{MONTHS_SHORT[month - 1]}</span>
                     </div>
-                    <span className="flex-1 text-neutral-700">{expense.name}</span>
-                    <span className="w-28 text-right font-medium text-amber-600">{fmt(expense.amount)}</span>
+                    <span className={`flex-1 ${isOverdue ? 'text-red-700 font-medium' : 'text-neutral-700'}`}>{expense.name}</span>
+                    <span className={`w-28 text-right font-medium ${isOverdue ? 'text-red-600' : 'text-amber-600'}`}>{fmt(expense.amount)}</span>
                     <div className="w-7"></div>
                   </div>
-                ))}
+                  );
+                })}
               </div>
             </div>
 
@@ -1266,27 +1320,34 @@ export default function BudgetSystem() {
                 <div className="flex items-center gap-2">
                   <div className="w-6 h-6 rounded-md bg-rose-100 flex items-center justify-center"><CreditCard size={14} className="text-rose-600" /></div>
                   <span className="font-medium text-neutral-700">Кредиты</span>
+                  {isCurrentMonth && data.credits.filter(c => !isCreditPaid(c.id) && !isCreditSkipped(c.id) && c.day < currentDay).length > 0 && (
+                    <span className="text-red-500 text-xs">⚠️ просрочено</span>
+                  )}
                 </div>
                 <span className="text-sm font-medium text-rose-600">{fmt(planCredits)}</span>
               </div>
               <div className="px-4 py-1">
-                {data.credits.filter(c => !isCreditPaid(c.id) && !isCreditSkipped(c.id)).sort((a, b) => a.day - b.day).map(credit => (
-                  <div key={credit.id} className="flex items-center gap-2 py-2.5 border-b border-neutral-100 last:border-0 group">
+                {data.credits.filter(c => !isCreditPaid(c.id) && !isCreditSkipped(c.id)).sort((a, b) => a.day - b.day).map(credit => {
+                  const isOverdue = isCurrentMonth && credit.day < currentDay;
+                  return (
+                  <div key={credit.id} className={`flex items-center gap-2 py-2.5 border-b border-neutral-100 last:border-0 group ${isOverdue ? 'bg-red-50' : ''}`}>
                     <button onClick={() => markCreditDone(credit)} className="w-5 h-5 rounded border-2 border-emerald-300 hover:border-emerald-500 hover:bg-emerald-50 flex items-center justify-center transition-all flex-shrink-0" title="Оплачено">
                       <Check size={12} className="text-emerald-400 group-hover:text-emerald-600" />
                     </button>
                     <button onClick={() => skipCreditPayment(credit)} className="w-5 h-5 rounded border-2 border-orange-300 hover:border-orange-500 hover:bg-orange-50 flex items-center justify-center transition-all flex-shrink-0 text-[10px] font-bold text-orange-400 hover:text-orange-600" title="Пропустить → в долг">
                       ✕
                     </button>
+                    {isOverdue && <span className="text-red-500">⚠️</span>}
                     <div className="w-16 flex-shrink-0">
-                      <span className="text-sm text-neutral-600">{String(credit.day).padStart(2, '0')}</span>
+                      <span className={`text-sm ${isOverdue ? 'text-red-600 font-medium' : 'text-neutral-600'}`}>{String(credit.day).padStart(2, '0')}</span>
                       <span className="text-xs text-neutral-400 ml-1">{MONTHS_SHORT[month - 1]}</span>
                     </div>
-                    <span className="flex-1 text-neutral-700">{credit.name}</span>
-                    <span className="w-28 text-right font-medium text-rose-600">{fmt(credit.monthlyPayment)}</span>
+                    <span className={`flex-1 ${isOverdue ? 'text-red-700 font-medium' : 'text-neutral-700'}`}>{credit.name}</span>
+                    <span className={`w-28 text-right font-medium ${isOverdue ? 'text-red-600' : 'text-rose-600'}`}>{fmt(credit.monthlyPayment)}</span>
                     <div className="w-7"></div>
                   </div>
-                ))}
+                  );
+                })}
               </div>
             </div>
           </div>
