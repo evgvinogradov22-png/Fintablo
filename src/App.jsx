@@ -1728,7 +1728,8 @@ export default function BudgetSystem() {
                 </table>
                 {activeHabits.length === 0 && <div className="p-8 text-center text-neutral-400 text-sm">Нет привычек. Добавьте первую!</div>}
               </div>
-            )}
+              );
+            })()}
 
             {/* Month View - компактные чекбоксы */}
             {habitView === 'month' && (() => {
