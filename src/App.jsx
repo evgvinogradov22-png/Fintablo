@@ -872,49 +872,92 @@ export default function BudgetSystem() {
     );
   };
 
+  // Главная вкладка: finance или habits
+  const [mainTab, setMainTab] = useState('finance');
+
   return (
     <div className="min-h-screen bg-neutral-50" style={{ fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" }}>
       <header className="bg-white border-b border-neutral-200 sticky top-0 z-50">
         <div className="max-w-4xl mx-auto px-3 sm:px-4 py-2 sm:py-3">
-          {/* Верхняя строка: месяц и выход */}
-          <div className="flex items-center justify-between mb-2 sm:mb-0">
-            <div className="flex items-center gap-2 sm:gap-3">
-              <button onClick={() => changeMonth(-1)} className="p-1 sm:p-1.5 hover:bg-neutral-100 rounded-lg transition-colors"><ChevronLeft size={20} className="text-neutral-400" /></button>
-              <div className="text-center min-w-[120px] sm:min-w-[150px]">
-                <h1 className="text-base sm:text-lg font-semibold text-neutral-800">{monthName}</h1>
-                <div className="text-[10px] sm:text-xs text-neutral-400">Сегодня: {currentDay} {MONTHS_SHORT[today.getMonth()]}</div>
-              </div>
-              <button onClick={() => changeMonth(1)} className="p-1 sm:p-1.5 hover:bg-neutral-100 rounded-lg transition-colors"><ChevronRight size={20} className="text-neutral-400" /></button>
+          {/* Главные вкладки: Финансы / Привычки */}
+          <div className="flex items-center justify-between mb-2">
+            <div className="flex bg-neutral-100 rounded-lg p-1">
+              <button onClick={() => setMainTab('finance')} className={`px-4 py-2 rounded-md text-sm font-medium transition-all ${mainTab === 'finance' ? 'bg-white shadow-sm text-neutral-800' : 'text-neutral-500'}`}>
+                💰 Финансы
+              </button>
+              <button onClick={() => setMainTab('habits')} className={`px-4 py-2 rounded-md text-sm font-medium transition-all ${mainTab === 'habits' ? 'bg-white shadow-sm text-neutral-800' : 'text-neutral-500'}`}>
+                ✅ Привычки
+              </button>
             </div>
             <button onClick={handleLogout} className="p-2 hover:bg-red-50 rounded-lg transition-colors group" title="Выйти">
               <LogOut size={18} className="text-neutral-400 group-hover:text-red-500" />
             </button>
           </div>
-          {/* Табы - горизонтальный скролл на мобильных */}
-          <div className="overflow-x-auto -mx-3 px-3 sm:mx-0 sm:px-0 scrollbar-hide">
-            <div className="flex items-center gap-1 bg-neutral-100 rounded-lg p-1 min-w-max">
-              {[
-                { id: 'budget', label: 'Бюджет', icon: '📊' },
-                { id: 'habits', label: 'Привычки', icon: '✅' },
-                { id: 'journal', label: 'Дневник', icon: '📝' },
-                { id: 'employees', label: 'Сотрудники', icon: '👥' },
-                { id: 'recurring', label: 'Пост.', icon: '🔄' },
-                { id: 'credits', label: 'Кредиты', icon: '💳' },
-                { id: 'dds', label: 'ДДС', icon: '📋' },
-              ].map(t => (
-                <button key={t.id} onClick={() => setTab(t.id)} className={`px-2 sm:px-3 py-1.5 rounded-md text-xs sm:text-sm transition-all whitespace-nowrap ${tab === t.id ? 'bg-white text-neutral-800 shadow-sm font-medium' : 'text-neutral-500 hover:text-neutral-700'}`}>
-                  <span className="sm:hidden">{t.icon}</span>
-                  <span className="hidden sm:inline">{t.label}</span>
-                  <span className="sm:hidden ml-1">{t.id === 'recurring' ? 'Пост.' : t.id === 'employees' ? 'Сотр.' : t.id === 'habits' ? 'Прив.' : t.id === 'journal' ? 'Днев.' : t.label}</span>
-                  {t.id === 'dds' && dds.length > 0 && <span className="ml-1 text-[10px] sm:text-xs bg-emerald-500 text-white px-1 sm:px-1.5 rounded-full">{dds.length}</span>}
-                </button>
-              ))}
-            </div>
-          </div>
+
+          {/* Подвкладки для Финансов */}
+          {mainTab === 'finance' && (
+            <>
+              <div className="flex items-center justify-center gap-2 sm:gap-3 mb-2">
+                <button onClick={() => changeMonth(-1)} className="p-1 sm:p-1.5 hover:bg-neutral-100 rounded-lg transition-colors"><ChevronLeft size={20} className="text-neutral-400" /></button>
+                <div className="text-center min-w-[120px] sm:min-w-[150px]">
+                  <h1 className="text-base sm:text-lg font-semibold text-neutral-800">{monthName}</h1>
+                  <div className="text-[10px] sm:text-xs text-neutral-400">Сегодня: {currentDay} {MONTHS_SHORT[today.getMonth()]}</div>
+                </div>
+                <button onClick={() => changeMonth(1)} className="p-1 sm:p-1.5 hover:bg-neutral-100 rounded-lg transition-colors"><ChevronRight size={20} className="text-neutral-400" /></button>
+              </div>
+              <div className="overflow-x-auto -mx-3 px-3 sm:mx-0 sm:px-0 scrollbar-hide">
+                <div className="flex items-center gap-1 bg-neutral-100 rounded-lg p-1 min-w-max">
+                  {[
+                    { id: 'budget', label: 'Бюджет', icon: '📊' },
+                    { id: 'employees', label: 'Сотрудники', icon: '👥' },
+                    { id: 'recurring', label: 'Пост.', icon: '🔄' },
+                    { id: 'credits', label: 'Кредиты', icon: '💳' },
+                    { id: 'dds', label: 'ДДС', icon: '📋' },
+                  ].map(t => (
+                    <button key={t.id} onClick={() => setTab(t.id)} className={`px-2 sm:px-3 py-1.5 rounded-md text-xs sm:text-sm transition-all whitespace-nowrap ${tab === t.id ? 'bg-white text-neutral-800 shadow-sm font-medium' : 'text-neutral-500 hover:text-neutral-700'}`}>
+                      <span className="sm:hidden">{t.icon}</span>
+                      <span className="hidden sm:inline">{t.label}</span>
+                      <span className="sm:hidden ml-1">{t.id === 'recurring' ? 'Пост.' : t.id === 'employees' ? 'Сотр.' : t.label}</span>
+                      {t.id === 'dds' && dds.length > 0 && <span className="ml-1 text-[10px] sm:text-xs bg-emerald-500 text-white px-1 sm:px-1.5 rounded-full">{dds.length}</span>}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </>
+          )}
+
+          {/* Подвкладки для Привычек */}
+          {mainTab === 'habits' && (
+            <>
+              <div className="flex items-center justify-center mb-2">
+                <div className="text-center">
+                  <h1 className="text-base sm:text-lg font-semibold text-neutral-800">Трекер привычек</h1>
+                  <div className="text-[10px] sm:text-xs text-neutral-400">Сегодня: {currentDay} {MONTHS_SHORT[today.getMonth()]}</div>
+                </div>
+              </div>
+              <div className="overflow-x-auto -mx-3 px-3 sm:mx-0 sm:px-0 scrollbar-hide">
+                <div className="flex items-center gap-1 bg-neutral-100 rounded-lg p-1 min-w-max">
+                  {[
+                    { id: 'habits', label: 'Трекер', icon: '✅' },
+                    { id: 'journal', label: 'Дневник', icon: '📝' },
+                  ].map(t => (
+                    <button key={t.id} onClick={() => setTab(t.id)} className={`px-3 sm:px-4 py-1.5 rounded-md text-xs sm:text-sm transition-all whitespace-nowrap ${tab === t.id ? 'bg-white text-neutral-800 shadow-sm font-medium' : 'text-neutral-500 hover:text-neutral-700'}`}>
+                      <span className="sm:hidden">{t.icon}</span>
+                      <span className="hidden sm:inline">{t.label}</span>
+                      <span className="sm:hidden ml-1">{t.label}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </>
+          )}
         </div>
       </header>
 
       <main className="max-w-4xl mx-auto px-3 sm:px-4 py-4 sm:py-6">
+        {/* ФИНАНСЫ */}
+        {mainTab === 'finance' && (
+          <>
         {/* Финансовое состояние — всегда сверху */}
         <div className="bg-white rounded-xl border border-neutral-200 overflow-hidden mb-4 sm:mb-6">
           <div className="flex items-center gap-2 px-3 sm:px-4 py-2 sm:py-3 bg-neutral-50 border-b border-neutral-100">
@@ -1352,8 +1395,12 @@ export default function BudgetSystem() {
             </div>
           </div>
         )}
+        </>
+        )}
 
         {/* ПРИВЫЧКИ */}
+        {mainTab === 'habits' && (
+          <>
         {tab === 'habits' && (
           <div className="space-y-4">
             {/* AI Quote */}
@@ -1591,6 +1638,8 @@ export default function BudgetSystem() {
               )}
             </div>
           </div>
+        )}
+        </>
         )}
 
         {/* Add Habit Modal */}
