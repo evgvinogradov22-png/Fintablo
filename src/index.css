@@ -89,6 +89,15 @@ nav {
   user-select: none;
 }
 
+/* Drag & drop styles */
+tr[draggable="true"] {
+  touch-action: none;
+}
+
+tr.dragging {
+  opacity: 0.5;
+}
+
 /* Better touch targets */
 @media (max-width: 640px) {
   button, a {

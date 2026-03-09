@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Check, ChevronLeft, ChevronRight, Plus, Trash2, Users, ArrowDownLeft, ArrowUpRight, CreditCard, TrendingUp, List, Lock, LogOut, Target, BarChart3, Folder, X, Sparkles, Send, BookOpen, Edit3, Save, Archive, RotateCcw } from 'lucide-react';
+import { Check, ChevronLeft, ChevronRight, Plus, Trash2, Users, ArrowDownLeft, ArrowUpRight, CreditCard, TrendingUp, List, Lock, LogOut, Target, BarChart3, Folder, X, Sparkles, Send, BookOpen, Edit3, Save, Archive, RotateCcw, GripVertical } from 'lucide-react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine } from 'recharts';
 import storage from './storage';
 
@@ -507,8 +507,10 @@ export default function BudgetSystem() {
   const [aiResponse, setAiResponse] = useState('');
   const [aiLoading, setAiLoading] = useState(false);
   const [selectedJournalDate, setSelectedJournalDate] = useState(null);
-  const [habitWeekOffset, setHabitWeekOffset] = useState(0); // 0 = текущая неделя, -1 = прошлая и т.д.
-  const [habitMonthOffset, setHabitMonthOffset] = useState(0); // 0 = текущий месяц
+  const [habitWeekOffset, setHabitWeekOffset] = useState(0);
+  const [habitMonthOffset, setHabitMonthOffset] = useState(0);
+  const [draggedHabit, setDraggedHabit] = useState(null);
+  const [dragOverHabit, setDragOverHabit] = useState(null);
 
   const todayKey = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
   const fmtDate = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
@@ -616,6 +618,54 @@ export default function BudgetSystem() {
   const removeHabit = (id) => {
     const newData = { ...data, habits: data.habits.filter(h => h.id !== id) };
     save(newData);
+  };
+
+  const reorderHabits = (dragId, dropId) => {
+    if (dragId === dropId || !data?.habits) return;
+    const habits = [...data.habits];
+    const dragIndex = habits.findIndex(h => h.id === dragId);
+    const dropIndex = habits.findIndex(h => h.id === dropId);
+    if (dragIndex === -1 || dropIndex === -1) return;
+    
+    const [draggedItem] = habits.splice(dragIndex, 1);
+    // Если перетаскиваем в другую группу — меняем группу
+    const dropHabit = data.habits.find(h => h.id === dropId);
+    if (dropHabit && draggedItem.groupId !== dropHabit.groupId) {
+      draggedItem.groupId = dropHabit.groupId;
+    }
+    habits.splice(dropIndex, 0, draggedItem);
+    
+    const newData = { ...data, habits };
+    save(newData);
+  };
+
+  const handleDragStart = (e, habit) => {
+    setDraggedHabit(habit);
+    e.dataTransfer.effectAllowed = 'move';
+    e.dataTransfer.setData('text/plain', habit.id);
+    e.target.style.opacity = '0.5';
+  };
+
+  const handleDragEnd = (e) => {
+    e.target.style.opacity = '1';
+    setDraggedHabit(null);
+    setDragOverHabit(null);
+  };
+
+  const handleDragOver = (e, habit) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+    if (draggedHabit && habit.id !== draggedHabit.id) {
+      setDragOverHabit(habit.id);
+    }
+  };
+
+  const handleDrop = (e, habit) => {
+    e.preventDefault();
+    if (draggedHabit && habit.id !== draggedHabit.id) {
+      reorderHabits(draggedHabit.id, habit.id);
+    }
+    setDragOverHabit(null);
   };
 
   const addHabitGroup = () => {
@@ -912,10 +962,10 @@ export default function BudgetSystem() {
         <div className="max-w-4xl mx-auto px-4 py-3">
           <div className="flex items-center justify-between mb-2">
             <div className="flex bg-neutral-100 rounded-lg p-1">
-              <button onClick={() => setMainTab('finance')} className={`px-4 py-2 rounded-md text-sm font-medium transition-all ${mainTab === 'finance' ? 'bg-white shadow-sm text-neutral-800' : 'text-neutral-500'}`}>
+              <button onClick={() => { setMainTab('finance'); setTab('budget'); }} className={`px-4 py-2 rounded-md text-sm font-medium transition-all ${mainTab === 'finance' ? 'bg-white shadow-sm text-neutral-800' : 'text-neutral-500'}`}>
                 💰 Финансы
               </button>
-              <button onClick={() => setMainTab('habits')} className={`px-4 py-2 rounded-md text-sm font-medium transition-all ${mainTab === 'habits' ? 'bg-white shadow-sm text-neutral-800' : 'text-neutral-500'}`}>
+              <button onClick={() => { setMainTab('habits'); setTab('habits'); }} className={`px-4 py-2 rounded-md text-sm font-medium transition-all ${mainTab === 'habits' ? 'bg-white shadow-sm text-neutral-800' : 'text-neutral-500'}`}>
                 ✅ Привычки
               </button>
             </div>
@@ -1091,11 +1141,40 @@ export default function BudgetSystem() {
               <ResponsiveContainer width="100%" height="100%">
                 <LineChart data={chartData} margin={{ top: 5, right: 5, left: 0, bottom: 5 }}>
                   <CartesianGrid strokeDasharray="3 3" stroke="#e5e5e5" />
-                  <XAxis dataKey="day" tick={{ fontSize: 9 }} stroke="#a3a3a3" interval="preserveStartEnd" />
+                  <XAxis 
+                    dataKey="day" 
+                    tick={({ x, y, payload }) => (
+                      <text x={x} y={y + 10} textAnchor="middle" fontSize={9} fill={payload.value === currentDay ? '#3b82f6' : '#a3a3a3'} fontWeight={payload.value === currentDay ? 'bold' : 'normal'}>
+                        {payload.value}
+                      </text>
+                    )}
+                    stroke="#a3a3a3" 
+                    interval="preserveStartEnd" 
+                  />
                   <YAxis tick={{ fontSize: 9 }} stroke="#a3a3a3" tickFormatter={v => `${Math.round(v/1000)}K`} width={35} />
                   <Tooltip formatter={(v) => fmt(v)} labelFormatter={(d) => `${d} ${MONTHS_SHORT[month-1]}`} />
                   <ReferenceLine y={0} stroke="#ef4444" strokeDasharray="3 3" />
-                  <Line type="monotone" dataKey="balance" stroke="#3b82f6" strokeWidth={2} dot={false} name="Баланс" />
+                  <ReferenceLine x={currentDay} stroke="#3b82f6" strokeDasharray="4 4" strokeWidth={1} />
+                  <Line 
+                    type="monotone" 
+                    dataKey="balance" 
+                    stroke="#3b82f6" 
+                    strokeWidth={2} 
+                    dot={(props) => {
+                      const { cx, cy, payload } = props;
+                      if (payload.day === currentDay) {
+                        return (
+                          <g>
+                            <circle cx={cx} cy={cy} r={6} fill="#3b82f6" stroke="#fff" strokeWidth={2} />
+                            <circle cx={cx} cy={cy} r={10} fill="none" stroke="#3b82f6" strokeWidth={1} opacity={0.3} />
+                          </g>
+                        );
+                      }
+                      return null;
+                    }}
+                    activeDot={{ r: 4, fill: '#3b82f6' }}
+                    name="Баланс" 
+                  />
                 </LineChart>
               </ResponsiveContainer>
             </div>
@@ -1693,11 +1772,22 @@ export default function BudgetSystem() {
                             <td colSpan={8} className={`px-3 py-1 text-xs font-medium ${HABIT_COLORS[group.color].text}`}>{group.name}</td>
                           </tr>
                           {groupHabits.map(habit => (
-                            <tr key={habit.id} className="border-b last:border-0 group/row hover:bg-neutral-50">
+                            <tr 
+                              key={habit.id} 
+                              draggable
+                              onDragStart={(e) => handleDragStart(e, habit)}
+                              onDragEnd={handleDragEnd}
+                              onDragOver={(e) => handleDragOver(e, habit)}
+                              onDrop={(e) => handleDrop(e, habit)}
+                              className={`border-b last:border-0 group/row hover:bg-neutral-50 cursor-grab active:cursor-grabbing transition-all ${
+                                dragOverHabit === habit.id ? 'bg-blue-50 border-t-2 border-t-blue-400' : ''
+                              }`}
+                            >
                               <td className="p-3">
                                 <div className="flex items-center gap-2">
+                                  <GripVertical size={14} className="text-neutral-300 group-hover/row:text-neutral-400 flex-shrink-0 cursor-grab" />
                                   <span className="text-sm text-neutral-700">{habit.name}</span>
-                                  <div className="opacity-0 group-hover/row:opacity-100 flex items-center gap-1">
+                                  <div className="opacity-0 group-hover/row:opacity-100 flex items-center gap-1 ml-auto">
                                     <button onClick={() => archiveHabit(habit.id)} className="p-1 hover:bg-amber-100 rounded" title="В архив (история сохранится)">
                                       <Archive size={12} className="text-amber-500" />
                                     </button>
