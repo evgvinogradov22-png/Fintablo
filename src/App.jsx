@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Check, ChevronLeft, ChevronRight, Plus, Trash2, Users, ArrowDownLeft, ArrowUpRight, CreditCard, TrendingUp, List, Lock, LogOut, Target, BarChart3, Folder, X, Sparkles, Send, BookOpen, Edit3, Save } from 'lucide-react';
+import { Check, ChevronLeft, ChevronRight, Plus, Trash2, Users, ArrowDownLeft, ArrowUpRight, CreditCard, TrendingUp, List, Lock, LogOut, Target, BarChart3, Folder, X, Sparkles, Send, BookOpen, Edit3, Save, Archive, RotateCcw } from 'lucide-react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine } from 'recharts';
 import storage from './storage';
 
@@ -579,10 +579,20 @@ export default function BudgetSystem() {
     if (!newHabit.name.trim() || !data) return;
     const newData = { ...data };
     if (!newData.habits) newData.habits = [];
-    newData.habits.push({ id: Date.now(), name: newHabit.name, groupId: newHabit.groupId || data.habitGroups?.[0]?.id, createdAt: todayKey });
+    newData.habits.push({ id: Date.now(), name: newHabit.name, groupId: newHabit.groupId || data.habitGroups?.[0]?.id, createdAt: todayKey, archived: false });
     save(newData);
     setNewHabit({ name: '', groupId: null });
     setShowAddHabit(false);
+  };
+
+  const archiveHabit = (id) => {
+    const newData = { ...data, habits: data.habits.map(h => h.id === id ? { ...h, archived: true, archivedAt: todayKey } : h) };
+    save(newData);
+  };
+
+  const unarchiveHabit = (id) => {
+    const newData = { ...data, habits: data.habits.map(h => h.id === id ? { ...h, archived: false, archivedAt: null } : h) };
+    save(newData);
   };
 
   const removeHabit = (id) => {
@@ -1399,7 +1409,44 @@ export default function BudgetSystem() {
         {/* ПРИВЫЧКИ */}
         {mainTab === 'habits' && (
           <>
-        {tab === 'habits' && (
+        {tab === 'habits' && (() => {
+          const weekDays = getWeekDays(today);
+          const groups = data.habitGroups || [];
+          const activeHabits = (data.habits || []).filter(h => !h.archived);
+          const archivedHabits = (data.habits || []).filter(h => h.archived);
+          
+          // Статистика за неделю
+          let weekTotal = 0, weekDone = 0;
+          weekDays.forEach(day => {
+            if (day <= today) {
+              activeHabits.forEach(h => {
+                if (new Date(h.createdAt) <= day) {
+                  weekTotal++;
+                  if (isHabitCompleted(h.id, day)) weekDone++;
+                }
+              });
+            }
+          });
+          const weekPct = weekTotal > 0 ? Math.round((weekDone / weekTotal) * 100) : 0;
+          
+          // Статистика за сегодня
+          const todayDone = activeHabits.filter(h => isHabitCompleted(h.id, today)).length;
+          const todayTotal = activeHabits.length;
+          const todayPct = todayTotal > 0 ? Math.round((todayDone / todayTotal) * 100) : 0;
+          
+          // Лучший стрик
+          const getStreak = (habitId) => {
+            let streak = 0;
+            const sortedDays = [...weekDays].filter(d => d <= today).sort((a, b) => b - a);
+            for (const day of sortedDays) {
+              if (isHabitCompleted(habitId, day)) streak++;
+              else break;
+            }
+            return streak;
+          };
+          const bestStreak = Math.max(...activeHabits.map(h => getStreak(h.id)), 0);
+
+          return (
           <div className="space-y-4">
             {/* AI Quote */}
             <div className="bg-gradient-to-r from-violet-500 to-blue-500 rounded-xl p-4 text-white">
@@ -1415,101 +1462,155 @@ export default function BudgetSystem() {
               </div>
             </div>
 
-            {/* Today Stats */}
-            <div className="bg-white rounded-xl border-2 border-blue-200 p-4">
-              <div className="flex items-center justify-between">
-                <div>
-                  <div className="text-sm text-blue-600 font-medium">Сегодня</div>
-                  <div className="text-2xl font-bold">
-                    {(data.habits || []).filter(h => isHabitCompleted(h.id, today)).length}
-                    <span className="text-neutral-400 text-lg font-normal"> / {(data.habits || []).length}</span>
+            {/* Dashboard */}
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+              {/* Сегодня - большой круг */}
+              <div className="col-span-2 sm:col-span-1 bg-white rounded-xl border-2 border-blue-200 p-4">
+                <div className="flex items-center gap-4">
+                  <div className="relative w-16 h-16">
+                    <svg className="w-16 h-16 -rotate-90">
+                      <circle cx="32" cy="32" r="28" fill="none" stroke="#e5e5e5" strokeWidth="6" />
+                      <circle cx="32" cy="32" r="28" fill="none" stroke="#3b82f6" strokeWidth="6" 
+                        strokeDasharray={`${todayPct * 1.76} 176`} strokeLinecap="round" />
+                    </svg>
+                    <div className="absolute inset-0 flex items-center justify-center text-lg font-bold text-blue-600">{todayPct}%</div>
+                  </div>
+                  <div>
+                    <div className="text-xs text-neutral-500">Сегодня</div>
+                    <div className="text-2xl font-bold">{todayDone}<span className="text-neutral-400 text-base">/{todayTotal}</span></div>
                   </div>
                 </div>
-                <button onClick={() => setShowAddHabit(true)} className="px-3 py-2 bg-blue-500 text-white rounded-lg text-sm font-medium flex items-center gap-1">
-                  <Plus size={16} /> Привычка
-                </button>
+              </div>
+              
+              {/* За неделю */}
+              <div className="bg-white rounded-xl border p-4">
+                <div className="flex items-center gap-2 mb-2">
+                  <Target size={16} className="text-emerald-500" />
+                  <span className="text-xs text-neutral-500">За неделю</span>
+                </div>
+                <div className="text-2xl font-bold text-emerald-600">{weekPct}%</div>
+                <div className="mt-2 h-2 bg-neutral-100 rounded-full overflow-hidden">
+                  <div className="h-full bg-emerald-500 rounded-full" style={{ width: `${weekPct}%` }} />
+                </div>
+              </div>
+              
+              {/* Привычек */}
+              <div className="bg-white rounded-xl border p-4">
+                <div className="flex items-center gap-2 mb-2">
+                  <BarChart3 size={16} className="text-violet-500" />
+                  <span className="text-xs text-neutral-500">Привычек</span>
+                </div>
+                <div className="text-2xl font-bold">{activeHabits.length}</div>
+                {archivedHabits.length > 0 && <div className="text-xs text-neutral-400">+{archivedHabits.length} в архиве</div>}
+              </div>
+              
+              {/* Лучший стрик */}
+              <div className="bg-white rounded-xl border p-4">
+                <div className="flex items-center gap-2 mb-2">
+                  <TrendingUp size={16} className="text-amber-500" />
+                  <span className="text-xs text-neutral-500">Стрик</span>
+                </div>
+                <div className="text-2xl font-bold">{bestStreak} <span className="text-sm text-neutral-400">дн.</span></div>
               </div>
             </div>
 
-            {/* View Toggle */}
+            {/* Controls */}
             <div className="flex items-center justify-between">
               <div className="flex bg-neutral-100 rounded-lg p-1">
                 <button onClick={() => setHabitView('week')} className={`px-3 py-1 rounded text-sm ${habitView === 'week' ? 'bg-white shadow font-medium' : 'text-neutral-500'}`}>Неделя</button>
                 <button onClick={() => setHabitView('month')} className={`px-3 py-1 rounded text-sm ${habitView === 'month' ? 'bg-white shadow font-medium' : 'text-neutral-500'}`}>Месяц</button>
                 <button onClick={() => setHabitView('groups')} className={`px-3 py-1 rounded text-sm ${habitView === 'groups' ? 'bg-white shadow font-medium' : 'text-neutral-500'}`}>Группы</button>
+                {archivedHabits.length > 0 && (
+                  <button onClick={() => setHabitView('archive')} className={`px-3 py-1 rounded text-sm ${habitView === 'archive' ? 'bg-white shadow font-medium' : 'text-neutral-500'}`}>Архив</button>
+                )}
               </div>
+              <button onClick={() => setShowAddHabit(true)} className="p-2 bg-blue-500 text-white rounded-lg"><Plus size={18} /></button>
             </div>
 
-            {/* Week View */}
-            {habitView === 'week' && (() => {
-              const weekDays = getWeekDays(today);
-              const groups = data.habitGroups || [];
-              const habits = data.habits || [];
-              return (
-                <div className="bg-white rounded-xl border overflow-hidden">
-                  <div className="grid grid-cols-8 border-b">
-                    <div className="p-2"></div>
-                    {weekDays.map((day, i) => {
-                      const isToday = fmtDate(day) === todayKey;
+            {/* Week View - компактные чекбоксы, широкое название */}
+            {habitView === 'week' && (
+              <div className="bg-white rounded-xl border overflow-hidden">
+                <table className="w-full">
+                  <thead>
+                    <tr className="border-b">
+                      <th className="text-left p-3 font-medium text-neutral-700">Привычка</th>
+                      {weekDays.map((day, i) => {
+                        const isToday = fmtDate(day) === todayKey;
+                        return (
+                          <th key={i} className={`w-10 p-2 text-center ${isToday ? 'bg-blue-500 text-white' : ''}`}>
+                            <div className={`text-[10px] font-normal ${isToday ? 'text-blue-100' : 'text-neutral-400'}`}>{DAYS_SHORT[i]}</div>
+                            <div className="text-sm font-bold">{day.getDate()}</div>
+                          </th>
+                        );
+                      })}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {groups.map(group => {
+                      const groupHabits = activeHabits.filter(h => h.groupId === group.id);
+                      if (groupHabits.length === 0) return null;
                       return (
-                        <div key={i} className={`p-2 text-center ${isToday ? 'bg-blue-500 text-white' : ''}`}>
-                          <div className={`text-[10px] ${isToday ? 'text-blue-100' : 'text-neutral-400'}`}>{DAYS_SHORT[i]}</div>
-                          <div className="text-sm font-bold">{day.getDate()}</div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                  {groups.map(group => {
-                    const groupHabits = habits.filter(h => h.groupId === group.id);
-                    if (groupHabits.length === 0) return null;
-                    return (
-                      <div key={group.id}>
-                        <div className={`px-3 py-1 ${HABIT_COLORS[group.color].bg} text-xs font-medium ${HABIT_COLORS[group.color].text}`}>{group.name}</div>
-                        {groupHabits.map(habit => (
-                          <div key={habit.id} className="grid grid-cols-8 border-b last:border-0">
-                            <div className="p-2 text-sm truncate flex items-center gap-1 group">
-                              <span className="truncate">{habit.name}</span>
-                              <button onClick={() => removeHabit(habit.id)} className="opacity-0 group-hover:opacity-100 p-0.5"><Trash2 size={10} className="text-neutral-300 hover:text-red-400" /></button>
-                            </div>
-                            {weekDays.map((day, i) => {
-                              const done = isHabitCompleted(habit.id, day);
-                              const isToday = fmtDate(day) === todayKey;
-                              const future = day > today;
-                              return (
-                                <div key={i} className={`p-2 flex justify-center ${isToday ? 'bg-blue-50' : ''}`}>
-                                  <button onClick={() => !future && toggleHabitCompletion(habit.id, day)} disabled={future} 
-                                    className={`w-6 h-6 rounded flex items-center justify-center ${done ? `${HABIT_COLORS[group.color].fill} text-white` : future ? 'bg-neutral-100' : `border-2 ${HABIT_COLORS[group.color].border}`}`}>
-                                    {done && <Check size={12} />}
+                        <React.Fragment key={group.id}>
+                          <tr className={HABIT_COLORS[group.color].bg}>
+                            <td colSpan={8} className={`px-3 py-1 text-xs font-medium ${HABIT_COLORS[group.color].text}`}>{group.name}</td>
+                          </tr>
+                          {groupHabits.map(habit => (
+                            <tr key={habit.id} className="border-b last:border-0 group/row hover:bg-neutral-50">
+                              <td className="p-3">
+                                <div className="flex items-center gap-2">
+                                  <span className="text-sm text-neutral-700">{habit.name}</span>
+                                  <button onClick={() => archiveHabit(habit.id)} className="opacity-0 group-hover/row:opacity-100 p-1 hover:bg-neutral-200 rounded" title="Архивировать">
+                                    <Archive size={12} className="text-neutral-400" />
                                   </button>
                                 </div>
-                              );
-                            })}
-                          </div>
-                        ))}
-                      </div>
-                    );
-                  })}
-                  {habits.length === 0 && <div className="p-8 text-center text-neutral-400 text-sm">Нет привычек. Добавьте первую!</div>}
-                </div>
-              );
-            })()}
+                              </td>
+                              {weekDays.map((day, i) => {
+                                const done = isHabitCompleted(habit.id, day);
+                                const isToday = fmtDate(day) === todayKey;
+                                const future = day > today;
+                                return (
+                                  <td key={i} className={`w-10 p-1 text-center ${isToday ? 'bg-blue-50' : ''}`}>
+                                    <button onClick={() => !future && toggleHabitCompletion(habit.id, day)} disabled={future} 
+                                      className={`w-6 h-6 mx-auto rounded flex items-center justify-center transition-all ${
+                                        done ? `${HABIT_COLORS[group.color].fill} text-white` : 
+                                        future ? 'bg-neutral-100' : 
+                                        `border-2 ${HABIT_COLORS[group.color].border} hover:bg-neutral-50`
+                                      }`}>
+                                      {done && <Check size={12} />}
+                                    </button>
+                                  </td>
+                                );
+                              })}
+                            </tr>
+                          ))}
+                        </React.Fragment>
+                      );
+                    })}
+                  </tbody>
+                </table>
+                {activeHabits.length === 0 && <div className="p-8 text-center text-neutral-400 text-sm">Нет привычек. Добавьте первую!</div>}
+              </div>
+            )}
 
             {/* Month View */}
             {habitView === 'month' && (() => {
               const monthDays = getMonthDaysHabits(today);
-              const groups = data.habitGroups || [];
-              const habits = data.habits || [];
               return (
                 <div className="space-y-3">
                   {groups.map(group => {
-                    const groupHabits = habits.filter(h => h.groupId === group.id);
+                    const groupHabits = activeHabits.filter(h => h.groupId === group.id);
                     if (groupHabits.length === 0) return null;
                     return (
                       <div key={group.id} className="bg-white rounded-xl border overflow-hidden">
                         <div className={`px-3 py-2 ${HABIT_COLORS[group.color].bg} text-sm font-medium ${HABIT_COLORS[group.color].text}`}>{group.name}</div>
                         {groupHabits.map(habit => (
-                          <div key={habit.id} className="p-3 border-t">
-                            <div className="text-sm font-medium mb-2">{habit.name}</div>
+                          <div key={habit.id} className="p-3 border-t group/row">
+                            <div className="flex items-center justify-between mb-2">
+                              <span className="text-sm font-medium">{habit.name}</span>
+                              <button onClick={() => archiveHabit(habit.id)} className="opacity-0 group-hover/row:opacity-100 p-1 hover:bg-neutral-200 rounded" title="Архивировать">
+                                <Archive size={12} className="text-neutral-400" />
+                              </button>
+                            </div>
                             <div className="grid grid-cols-7 gap-1">
                               {monthDays.map((day, i) => {
                                 const done = isHabitCompleted(habit.id, day);
@@ -1572,10 +1673,10 @@ export default function BudgetSystem() {
                       </div>
                     )}
                     <div className="space-y-1">
-                      {(data.habits || []).filter(h => h.groupId === group.id).map(habit => (
+                      {activeHabits.filter(h => h.groupId === group.id).map(habit => (
                         <div key={habit.id} className="flex items-center justify-between py-1 text-sm text-neutral-600">
                           <span>{habit.name}</span>
-                          <button onClick={() => removeHabit(habit.id)} className="p-1 hover:bg-red-50 rounded"><Trash2 size={12} className="text-neutral-300 hover:text-red-400" /></button>
+                          <button onClick={() => archiveHabit(habit.id)} className="p-1 hover:bg-neutral-100 rounded"><Archive size={12} className="text-neutral-400" /></button>
                         </div>
                       ))}
                     </div>
@@ -1583,8 +1684,48 @@ export default function BudgetSystem() {
                 ))}
               </div>
             )}
+
+            {/* Archive View */}
+            {habitView === 'archive' && (
+              <div className="bg-white rounded-xl border overflow-hidden">
+                <div className="px-4 py-3 bg-neutral-50 border-b flex items-center gap-2">
+                  <Archive size={18} className="text-neutral-500" />
+                  <span className="font-medium">Архив привычек</span>
+                  <span className="text-sm text-neutral-400">({archivedHabits.length})</span>
+                </div>
+                {archivedHabits.length === 0 ? (
+                  <div className="p-8 text-center text-neutral-400 text-sm">Архив пуст</div>
+                ) : (
+                  <div className="divide-y">
+                    {archivedHabits.map(habit => {
+                      const group = groups.find(g => g.id === habit.groupId);
+                      return (
+                        <div key={habit.id} className="flex items-center justify-between p-4">
+                          <div>
+                            <div className="font-medium text-neutral-700">{habit.name}</div>
+                            <div className="text-xs text-neutral-400">
+                              {group && <span className={HABIT_COLORS[group.color]?.text}>{group.name}</span>}
+                              {habit.archivedAt && <span className="ml-2">Архивирован: {habit.archivedAt}</span>}
+                            </div>
+                          </div>
+                          <div className="flex gap-2">
+                            <button onClick={() => unarchiveHabit(habit.id)} className="p-2 hover:bg-emerald-50 rounded-lg" title="Восстановить">
+                              <RotateCcw size={16} className="text-emerald-500" />
+                            </button>
+                            <button onClick={() => removeHabit(habit.id)} className="p-2 hover:bg-red-50 rounded-lg" title="Удалить навсегда">
+                              <Trash2 size={16} className="text-neutral-400 hover:text-red-400" />
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            )}
           </div>
-        )}
+        );
+        })()}
 
         {/* ДНЕВНИК */}
         {tab === 'journal' && (
