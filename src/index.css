@@ -104,4 +104,11 @@ tr.dragging {
     min-height: 44px;
     min-width: 44px;
   }
+  
+  /* Allow vertical scroll even when touching buttons */
+  table button {
+    touch-action: manipulation;
+    min-height: 28px;
+    min-width: 28px;
+  }
 }

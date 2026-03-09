@@ -2004,6 +2004,7 @@ export default function BudgetSystem() {
                                 return (
                                   <td key={i} className={`w-8 sm:w-10 p-0.5 sm:p-1 text-center ${isToday ? 'bg-blue-50' : ''}`}>
                                     <button onClick={() => !future && toggleHabitCompletion(habit.id, day)} disabled={future} 
+                                      style={{ touchAction: 'manipulation' }}
                                       className={`w-6 h-6 sm:w-7 sm:h-7 mx-auto rounded flex items-center justify-center transition-all ${
                                         done ? `${HABIT_COLORS[group.color].fill} text-white` : 
                                         future ? 'bg-neutral-100' : 
