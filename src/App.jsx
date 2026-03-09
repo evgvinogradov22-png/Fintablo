@@ -174,6 +174,7 @@ export default function BudgetSystem() {
   
   const [selectedMonth, setSelectedMonth] = useState(currentMonthKey);
   const [tab, setTab] = useState('budget');
+  const [mainTab, setMainTab] = useState('finance');
 
   useEffect(() => { 
     checkAuth();
@@ -871,9 +872,6 @@ export default function BudgetSystem() {
       </div>
     );
   };
-
-  // Главная вкладка: finance или habits
-  const [mainTab, setMainTab] = useState('finance');
 
   return (
     <div className="min-h-screen bg-neutral-50" style={{ fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" }}>
