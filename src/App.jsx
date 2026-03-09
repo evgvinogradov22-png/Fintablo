@@ -481,7 +481,8 @@ export default function BudgetSystem() {
       amount: expense.amount,
       day: expense.day,
       originalType: 'recurring',
-      recurringId: expense.id
+      recurringId: expense.id,
+      isOverdue: true
     });
     
     if (!newData.skippedRecurring) newData.skippedRecurring = {};
@@ -489,6 +490,83 @@ export default function BudgetSystem() {
     newData.skippedRecurring[selectedMonth].push(expense.id);
     
     save(newData);
+  };
+
+  // Перенести ВСЕ просроченные в долги
+  const transferAllOverdueToDebts = () => {
+    const newData = JSON.parse(JSON.stringify(data));
+    if (!newData.months[selectedMonth]) newData.months[selectedMonth] = { income: [], expenses: [], debts: [] };
+    if (!newData.months[selectedMonth].debts) newData.months[selectedMonth].debts = [];
+    if (!newData.skippedRecurring) newData.skippedRecurring = {};
+    if (!newData.skippedRecurring[selectedMonth]) newData.skippedRecurring[selectedMonth] = [];
+    if (!newData.skippedCredits) newData.skippedCredits = {};
+    if (!newData.skippedCredits[selectedMonth]) newData.skippedCredits[selectedMonth] = [];
+    
+    const { month: m } = parseMonthKey(selectedMonth);
+    let transferred = 0;
+    
+    // Просроченные постоянные расходы
+    const overdueRecurring = (newData.recurringExpenses || []).filter(e => 
+      !newData.skippedRecurring[selectedMonth].includes(e.id) && 
+      !(newData.dds?.[selectedMonth] || []).some(d => d.type === 'recurring' && d.recurringId === e.id) &&
+      e.day < currentDay
+    );
+    
+    overdueRecurring.forEach(expense => {
+      newData.months[selectedMonth].debts.push({
+        id: Date.now() + transferred,
+        name: `${expense.name} (просрочка ${expense.day} ${MONTHS_SHORT[m - 1]})`,
+        amount: expense.amount,
+        day: currentDay,
+        originalType: 'recurring',
+        recurringId: expense.id,
+        isOverdue: true
+      });
+      newData.skippedRecurring[selectedMonth].push(expense.id);
+      transferred++;
+    });
+    
+    // Просроченные кредиты
+    const overdueCredits = newData.credits.filter(c => 
+      !newData.skippedCredits[selectedMonth].includes(c.id) && 
+      !(newData.dds?.[selectedMonth] || []).some(d => d.type === 'credit' && d.creditId === c.id) &&
+      c.day < currentDay
+    );
+    
+    overdueCredits.forEach(credit => {
+      newData.months[selectedMonth].debts.push({
+        id: Date.now() + transferred,
+        name: `${credit.name} (просрочка ${credit.day} ${MONTHS_SHORT[m - 1]})`,
+        amount: credit.monthlyPayment,
+        day: currentDay,
+        originalType: 'credit',
+        creditId: credit.id,
+        isOverdue: true
+      });
+      newData.skippedCredits[selectedMonth].push(credit.id);
+      transferred++;
+    });
+    
+    // Просроченные расходы
+    const overdueExpenses = (newData.months[selectedMonth].expenses || []).filter(e => e.day < currentDay);
+    overdueExpenses.forEach(expense => {
+      newData.months[selectedMonth].debts.push({
+        id: Date.now() + transferred,
+        name: `${expense.name} (просрочка ${expense.day} ${MONTHS_SHORT[m - 1]})`,
+        amount: expense.amount,
+        day: currentDay,
+        originalType: 'expense',
+        isOverdue: true
+      });
+      transferred++;
+    });
+    // Удаляем просроченные расходы из списка расходов
+    newData.months[selectedMonth].expenses = (newData.months[selectedMonth].expenses || []).filter(e => e.day >= currentDay);
+    
+    if (transferred > 0) {
+      save(newData);
+    }
+  };
   };
 
   const isRecurringPaid = (id) => (data.dds?.[selectedMonth] || []).some(d => d.type === 'recurring' && d.recurringId === id);
@@ -888,39 +966,27 @@ export default function BudgetSystem() {
   };
 
   const Row = ({ item, type, onDone, onSkip, onUpdate, onRemove, color, isOverdue }) => (
-    <div className={`flex items-center gap-1 sm:gap-2 py-2 sm:py-2.5 border-b border-neutral-100 last:border-0 group ${isOverdue ? 'bg-red-50' : ''}`}>
-      <button onClick={onDone} className="w-5 h-5 rounded border-2 border-emerald-300 hover:border-emerald-500 hover:bg-emerald-50 flex items-center justify-center transition-all flex-shrink-0" title="Оплачено">
-        <Check size={10} className="text-emerald-400 group-hover:text-emerald-600 sm:w-3 sm:h-3" />
+    <div className={`flex items-center gap-3 px-4 py-3 group ${isOverdue ? 'bg-red-50' : ''}`}>
+      <button onClick={onDone} className="w-7 h-7 rounded-lg border-2 border-emerald-300 hover:border-emerald-500 hover:bg-emerald-50 flex items-center justify-center transition-all flex-shrink-0" title="Оплачено">
+        <Check size={14} className="text-emerald-400" />
       </button>
-      <button onClick={onSkip} className="w-5 h-5 rounded border-2 border-orange-300 hover:border-orange-500 hover:bg-orange-50 flex items-center justify-center transition-all flex-shrink-0 text-[10px] font-bold text-orange-400 hover:text-orange-600" title="Пропустить → в долг">
-        ✕
-      </button>
-      {isOverdue && <span className="text-red-500 text-sm" title="Просрочено!">⚠️</span>}
-      <div className="w-10 sm:w-16 flex-shrink-0">
-        <EditableInput 
-          type="number" 
-          value={item.day} 
-          onSave={(v) => onUpdate('day', v)} 
-          className={`w-6 sm:w-8 text-center text-xs sm:text-sm rounded px-0.5 sm:px-1 py-0.5 focus:outline-none focus:ring-2 focus:ring-blue-300 ${isOverdue ? 'bg-red-100 text-red-600' : 'bg-neutral-100 text-neutral-600'}`}
-          min="1" 
-          max="31" 
-        />
-        <span className="text-[10px] sm:text-xs text-neutral-400 ml-0.5 sm:ml-1">{MONTHS_SHORT[month - 1]}</span>
+      <div className="flex-1 min-w-0">
+        <div className="flex items-center gap-2">
+          {isOverdue && <span className="text-red-500">⚠️</span>}
+          <EditableInput 
+            value={item.name} 
+            onSave={(v) => onUpdate('name', v)} 
+            placeholder="Название" 
+            className={`bg-transparent focus:outline-none focus:bg-neutral-50 rounded min-w-0 font-medium ${isOverdue ? 'text-red-700' : 'text-neutral-800'}`}
+          />
+        </div>
+        <div className="text-xs text-neutral-400 mt-0.5">{item.day} {MONTHS_SHORT[month - 1]}</div>
       </div>
-      <EditableInput 
-        value={item.name} 
-        onSave={(v) => onUpdate('name', v)} 
-        placeholder="Название" 
-        className={`flex-1 bg-transparent focus:outline-none focus:bg-neutral-50 rounded px-1 min-w-0 text-xs sm:text-sm ${isOverdue ? 'text-red-700 font-medium' : 'text-neutral-700'}`}
-      />
       <EditableInput 
         value={item.amount} 
         onSave={(v) => onUpdate('amount', v)} 
-        className={`w-16 sm:w-28 text-right bg-transparent focus:outline-none focus:bg-neutral-50 rounded px-1 text-xs sm:text-sm font-medium flex-shrink-0 ${isOverdue ? 'text-red-600' : color}`} 
+        className={`w-24 text-right bg-transparent focus:outline-none focus:bg-neutral-50 rounded font-semibold flex-shrink-0 ${isOverdue ? 'text-red-600' : color}`} 
       />
-      <button onClick={onRemove} className="text-neutral-200 group-hover:text-neutral-400 hover:!text-red-400 transition-colors p-0.5 sm:p-1 flex-shrink-0">
-        <Trash2 size={12} className="sm:w-[14px] sm:h-[14px]" />
-      </button>
     </div>
   );
 
@@ -934,16 +1000,15 @@ export default function BudgetSystem() {
     const hasOverdue = overdueItems.length > 0;
     
     return (
-      <div className="bg-white rounded-xl border border-neutral-200 overflow-hidden">
-        <div className="flex items-center justify-between px-3 sm:px-4 py-2 sm:py-3 bg-neutral-50 border-b border-neutral-100">
-          <div className="flex items-center gap-1.5 sm:gap-2">
-            <div className={`w-5 h-5 sm:w-6 sm:h-6 rounded-md ${bgColor} flex items-center justify-center`}><Icon size={12} className={`${iconColor} sm:w-[14px] sm:h-[14px]`} /></div>
-            <span className="font-medium text-neutral-700 text-sm sm:text-base">{title}</span>
-            {hasOverdue && <span className="text-red-500 text-xs">⚠️ {overdueItems.length} просрочено</span>}
+      <div className="bg-white rounded-2xl sm:rounded-xl border border-neutral-100 sm:border-neutral-200 overflow-hidden">
+        <div className="flex items-center justify-between px-4 py-3 border-b border-neutral-100">
+          <div className="flex items-center gap-2">
+            <span className="font-semibold text-neutral-800">{title}</span>
+            {hasOverdue && <span className="text-red-500 text-xs">⚠️</span>}
           </div>
-          <span className={`text-xs sm:text-sm font-medium ${textColor}`}>{fmt(total)}</span>
+          <span className={`text-sm font-semibold ${textColor}`}>{fmt(total)}</span>
         </div>
-        <div className="px-2 sm:px-4 py-1">
+        <div className="divide-y divide-neutral-100">
           {/* Просроченные сверху */}
           {overdueItems.sort((a, b) => a.day - b.day).map(item => (
             <Row key={item.id} item={item} type={type} color={textColor} isOverdue={true}
@@ -962,8 +1027,8 @@ export default function BudgetSystem() {
               onRemove={() => remove(type, item.id)}
             />
           ))}
-          <button onClick={() => add(type)} className="flex items-center gap-1 text-xs sm:text-sm text-neutral-400 hover:text-neutral-600 py-2 sm:py-2.5 transition-colors w-full">
-            <Plus size={12} className="sm:w-[14px] sm:h-[14px]" /> Добавить
+          <button onClick={() => add(type)} className="flex items-center justify-center gap-2 text-sm text-neutral-400 hover:text-neutral-600 py-3 transition-colors w-full">
+            <Plus size={16} /> Добавить
           </button>
         </div>
       </div>
@@ -1041,98 +1106,137 @@ export default function BudgetSystem() {
         </div>
       </header>
 
-      {/* Mobile Header - минималистичный */}
-      <header className="sm:hidden bg-white border-b border-neutral-200 sticky top-0 z-50 safe-area-top">
+      {/* Mobile Header - оптимизированный */}
+      <header className="sm:hidden bg-white border-b border-neutral-100 sticky top-0 z-50 safe-area-top">
         <div className="px-4 py-3">
           {mainTab === 'finance' && (
-            <div className="flex items-center justify-between">
-              <button onClick={() => changeMonth(-1)} className="p-2 -ml-2 active:bg-neutral-100 rounded-xl"><ChevronLeft size={24} className="text-neutral-600" /></button>
-              <div className="text-center">
-                <h1 className="text-lg font-semibold text-neutral-800">{monthName}</h1>
-                <div className="text-[11px] text-neutral-400">Сегодня: {currentDay} {MONTHS_SHORT[today.getMonth()]}</div>
+            <>
+              <div className="flex items-center justify-between">
+                <button onClick={() => changeMonth(-1)} className="w-10 h-10 flex items-center justify-center rounded-full active:bg-neutral-100">
+                  <ChevronLeft size={22} className="text-neutral-600" />
+                </button>
+                <div className="text-center">
+                  <h1 className="text-[17px] font-semibold text-neutral-800">{monthName}</h1>
+                </div>
+                <button onClick={() => changeMonth(1)} className="w-10 h-10 flex items-center justify-center rounded-full active:bg-neutral-100">
+                  <ChevronRight size={22} className="text-neutral-600" />
+                </button>
               </div>
-              <button onClick={() => changeMonth(1)} className="p-2 -mr-2 active:bg-neutral-100 rounded-xl"><ChevronRight size={24} className="text-neutral-600" /></button>
-            </div>
+              <div className="flex gap-2 mt-3 overflow-x-auto pb-1 scrollbar-hide">
+                {[
+                  { id: 'budget', label: 'Бюджет' },
+                  { id: 'employees', label: 'ФОТ' },
+                  { id: 'recurring', label: 'Постоянные' },
+                  { id: 'credits', label: 'Кредиты' },
+                  { id: 'dds', label: 'ДДС' },
+                ].map(t => (
+                  <button 
+                    key={t.id} 
+                    onClick={() => setTab(t.id)} 
+                    className={`px-4 py-2 rounded-full text-sm font-medium whitespace-nowrap transition-all ${
+                      tab === t.id ? 'bg-blue-500 text-white' : 'bg-neutral-100 text-neutral-600 active:bg-neutral-200'
+                    }`}
+                  >
+                    {t.label}
+                    {t.id === 'dds' && dds.length > 0 && <span className="ml-1.5 bg-white/20 px-1.5 rounded-full text-xs">{dds.length}</span>}
+                  </button>
+                ))}
+              </div>
+            </>
           )}
           {mainTab === 'habits' && (
-            <div className="flex items-center justify-between">
-              <div>
-                <h1 className="text-lg font-semibold text-neutral-800">
-                  {tab === 'habits' ? 'Привычки' : 'Дневник'}
-                </h1>
-                <div className="text-[11px] text-neutral-400">{currentDay} {MONTHS_SHORT[today.getMonth()]} • {todayHabitsDone}/{activeHabitsCount} выполнено</div>
+            <>
+              <div className="flex items-center justify-between">
+                <div>
+                  <h1 className="text-[17px] font-semibold text-neutral-800">
+                    {tab === 'habits' ? 'Привычки' : 'Дневник'}
+                  </h1>
+                  <div className="text-xs text-neutral-400">{currentDay} {MONTHS_SHORT[today.getMonth()]} • {todayHabitsDone}/{activeHabitsCount} выполнено</div>
+                </div>
+                {tab === 'habits' && (
+                  <button onClick={() => setShowAddHabit(true)} className="w-11 h-11 bg-blue-500 rounded-full flex items-center justify-center shadow-lg shadow-blue-500/30 active:scale-95 transition-transform">
+                    <Plus size={22} className="text-white" />
+                  </button>
+                )}
               </div>
               {tab === 'habits' && (
-                <button onClick={() => setShowAddHabit(true)} className="w-10 h-10 bg-blue-500 rounded-full flex items-center justify-center shadow-lg active:scale-95 transition-transform">
-                  <Plus size={22} className="text-white" />
-                </button>
+                <div className="flex gap-2 mt-3">
+                  {[
+                    { id: 'week', label: 'Неделя' },
+                    { id: 'month', label: 'Месяц' },
+                    { id: 'groups', label: 'Группы' },
+                  ].map(t => (
+                    <button 
+                      key={t.id} 
+                      onClick={() => setHabitView(t.id)} 
+                      className={`px-4 py-2 rounded-full text-sm font-medium transition-all ${
+                        habitView === t.id ? 'bg-blue-500 text-white' : 'bg-neutral-100 text-neutral-600'
+                      }`}
+                    >
+                      {t.label}
+                    </button>
+                  ))}
+                  {(data?.habits || []).filter(h => h.archived).length > 0 && (
+                    <button 
+                      onClick={() => setHabitView('archive')} 
+                      className={`px-4 py-2 rounded-full text-sm font-medium transition-all ${
+                        habitView === 'archive' ? 'bg-blue-500 text-white' : 'bg-neutral-100 text-neutral-600'
+                      }`}
+                    >
+                      Архив
+                    </button>
+                  )}
+                </div>
               )}
-            </div>
+            </>
           )}
         </div>
-        
-        {/* Mobile sub-tabs */}
-        {mainTab === 'finance' && (
-          <div className="px-2 pb-2 overflow-x-auto scrollbar-hide">
-            <div className="flex gap-1 min-w-max">
-              {[
-                { id: 'budget', label: 'Бюджет', icon: '📊' },
-                { id: 'employees', label: 'Сотрудники', icon: '👥' },
-                { id: 'recurring', label: 'Постоянные', icon: '🔄' },
-                { id: 'credits', label: 'Кредиты', icon: '💳' },
-                { id: 'dds', label: 'ДДС', icon: '📋' },
-              ].map(t => (
-                <button key={t.id} onClick={() => setTab(t.id)} className={`px-3 py-2 rounded-xl text-sm transition-all whitespace-nowrap ${tab === t.id ? 'bg-blue-500 text-white font-medium' : 'bg-neutral-100 text-neutral-600 active:bg-neutral-200'}`}>
-                  {t.label}
-                  {t.id === 'dds' && dds.length > 0 && <span className="ml-1 text-xs bg-white/20 px-1.5 rounded-full">{dds.length}</span>}
-                </button>
-              ))}
-            </div>
-          </div>
-        )}
-        
-        {mainTab === 'habits' && (
-          <div className="px-4 pb-2 flex gap-2">
-            {[
-              { id: 'habits', label: 'Трекер' },
-              { id: 'journal', label: 'Дневник' },
-            ].map(t => (
-              <button key={t.id} onClick={() => setTab(t.id)} className={`flex-1 py-2 rounded-xl text-sm font-medium transition-all ${tab === t.id ? 'bg-blue-500 text-white' : 'bg-neutral-100 text-neutral-600'}`}>
-                {t.label}
-              </button>
-            ))}
-          </div>
-        )}
       </header>
 
       {/* Bottom Navigation - Mobile Only */}
-      <nav className="sm:hidden fixed bottom-0 left-0 right-0 bg-white border-t border-neutral-200 z-50 safe-area-bottom">
-        <div className="flex items-center justify-around py-2">
-          <button onClick={() => { setMainTab('finance'); setTab('budget'); }} className={`flex flex-col items-center gap-0.5 px-6 py-1 rounded-xl transition-all ${mainTab === 'finance' ? 'text-blue-600' : 'text-neutral-400'}`}>
+      <nav className="sm:hidden fixed bottom-0 left-0 right-0 bg-white border-t border-neutral-100 z-50 px-6 pb-6 pt-2 safe-area-bottom">
+        <div className="flex items-center justify-around">
+          <button onClick={() => { setMainTab('finance'); setTab('budget'); }} className={`flex flex-col items-center gap-1 py-2 px-4 rounded-2xl transition-all ${mainTab === 'finance' ? 'text-blue-600' : 'text-neutral-400'}`}>
             <TrendingUp size={24} strokeWidth={mainTab === 'finance' ? 2.5 : 1.5} />
-            <span className="text-[10px] font-medium">Финансы</span>
+            <span className="text-[11px] font-medium">Финансы</span>
           </button>
-          <button onClick={() => { setMainTab('habits'); setTab('habits'); }} className={`flex flex-col items-center gap-0.5 px-6 py-1 rounded-xl transition-all ${mainTab === 'habits' && tab === 'habits' ? 'text-blue-600' : 'text-neutral-400'}`}>
+          <button onClick={() => { setMainTab('habits'); setTab('habits'); }} className={`flex flex-col items-center gap-1 py-2 px-4 rounded-2xl transition-all ${mainTab === 'habits' && tab === 'habits' ? 'text-blue-600' : 'text-neutral-400'}`}>
             <Target size={24} strokeWidth={mainTab === 'habits' && tab === 'habits' ? 2.5 : 1.5} />
-            <span className="text-[10px] font-medium">Привычки</span>
+            <span className="text-[11px] font-medium">Привычки</span>
           </button>
-          <button onClick={() => { setMainTab('habits'); setTab('journal'); }} className={`flex flex-col items-center gap-0.5 px-6 py-1 rounded-xl transition-all ${mainTab === 'habits' && tab === 'journal' ? 'text-blue-600' : 'text-neutral-400'}`}>
+          <button onClick={() => { setMainTab('habits'); setTab('journal'); }} className={`flex flex-col items-center gap-1 py-2 px-4 rounded-2xl transition-all ${mainTab === 'habits' && tab === 'journal' ? 'text-blue-600' : 'text-neutral-400'}`}>
             <BookOpen size={24} strokeWidth={mainTab === 'habits' && tab === 'journal' ? 2.5 : 1.5} />
-            <span className="text-[10px] font-medium">Дневник</span>
-          </button>
-          <button onClick={handleLogout} className="flex flex-col items-center gap-0.5 px-6 py-1 text-neutral-400">
-            <LogOut size={24} strokeWidth={1.5} />
-            <span className="text-[10px] font-medium">Выход</span>
+            <span className="text-[11px] font-medium">Дневник</span>
           </button>
         </div>
       </nav>
 
-      <main className="max-w-4xl mx-auto px-3 sm:px-4 py-4 sm:py-6">
+      <main className="max-w-4xl mx-auto px-4 py-4 sm:py-6 sm:px-4 pb-28 sm:pb-6">
         {/* ФИНАНСЫ */}
         {mainTab === 'finance' && (
           <>
-        {/* Финансовое состояние — всегда сверху */}
-        <div className="bg-white rounded-xl border border-neutral-200 overflow-hidden mb-4 sm:mb-6">
+        {/* Mobile: Gradient balance card */}
+        <div className="sm:hidden bg-gradient-to-br from-blue-500 to-blue-600 rounded-2xl p-4 text-white mb-4">
+          <div className="text-sm opacity-80 mb-1">Текущий баланс</div>
+          <div className="text-3xl font-bold">{fmt(totalBalance)}</div>
+          <div className="flex gap-6 mt-4">
+            <div>
+              <div className="text-xs opacity-70">Приходы</div>
+              <div className="text-lg font-semibold text-emerald-300">+{fmtShort(totalIncome)}</div>
+            </div>
+            <div>
+              <div className="text-xs opacity-70">Расходы</div>
+              <div className="text-lg font-semibold text-red-300">−{fmtShort(totalOut)}</div>
+            </div>
+            <div>
+              <div className="text-xs opacity-70">К концу</div>
+              <div className={`text-lg font-semibold ${endBalance >= 0 ? 'text-white' : 'text-red-300'}`}>{fmtShort(endBalance)}</div>
+            </div>
+          </div>
+        </div>
+
+        {/* Desktop: Original finance state */}
+        <div className="hidden sm:block bg-white rounded-xl border border-neutral-200 overflow-hidden mb-4 sm:mb-6">
           <div className="flex items-center gap-2 px-3 sm:px-4 py-2 sm:py-3 bg-neutral-50 border-b border-neutral-100">
             <div className="w-5 h-5 sm:w-6 sm:h-6 rounded-md bg-blue-100 flex items-center justify-center"><TrendingUp size={12} className="text-blue-600 sm:w-[14px] sm:h-[14px]" /></div>
             <span className="font-medium text-neutral-700 text-sm sm:text-base">Финансовое состояние</span>
@@ -1200,8 +1304,8 @@ export default function BudgetSystem() {
           </div>
         </div>
 
-        {/* Счета */}
-        <div className="bg-white rounded-xl border border-neutral-200 p-3 sm:p-4 mb-4 sm:mb-6">
+        {/* Счета - скрыто на мобиле (баланс уже в карточке) */}
+        <div className="hidden sm:block bg-white rounded-xl border border-neutral-200 p-3 sm:p-4 mb-4 sm:mb-6">
           <div className="flex items-center justify-between mb-2 sm:mb-3">
             <span className="text-xs sm:text-sm font-medium text-neutral-500">Счета</span>
             <span className={`text-base sm:text-lg font-semibold ${totalBalance >= 0 ? 'text-neutral-800' : 'text-red-500'}`}>{fmt(totalBalance)}</span>
@@ -1218,6 +1322,42 @@ export default function BudgetSystem() {
 
         {tab === 'budget' && (
           <div className="space-y-4">
+            {/* Предупреждение о просрочках */}
+            {isCurrentMonth && (() => {
+              const overdueRecurring = recurringExpenses.filter(e => !isRecurringPaid(e.id) && !isRecurringSkipped(e.id) && e.day < currentDay);
+              const overdueCredits = data.credits.filter(c => !isCreditPaid(c.id) && !isCreditSkipped(c.id) && c.day < currentDay);
+              const overdueExpenses = (md.expenses || []).filter(i => i.day < currentDay);
+              const totalOverdue = overdueRecurring.length + overdueCredits.length + overdueExpenses.length;
+              const totalOverdueAmount = 
+                overdueRecurring.reduce((s, e) => s + e.amount, 0) +
+                overdueCredits.reduce((s, c) => s + c.monthlyPayment, 0) +
+                overdueExpenses.reduce((s, e) => s + e.amount, 0);
+              
+              if (totalOverdue === 0) return null;
+              
+              return (
+                <div className="bg-red-50 border border-red-100 rounded-2xl p-4">
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 bg-red-100 rounded-full flex items-center justify-center flex-shrink-0">
+                        <span className="text-lg">⚠️</span>
+                      </div>
+                      <div>
+                        <div className="font-medium text-red-800">{totalOverdue} просрочено</div>
+                        <div className="text-sm text-red-600">{fmt(totalOverdueAmount)}</div>
+                      </div>
+                    </div>
+                    <button 
+                      onClick={transferAllOverdueToDebts}
+                      className="px-4 py-2 bg-red-500 hover:bg-red-600 active:bg-red-700 text-white rounded-xl text-sm font-medium transition-colors flex-shrink-0"
+                    >
+                      В долги
+                    </button>
+                  </div>
+                </div>
+              );
+            })()}
+            
             <Section 
               title="Приходы" 
               icon={ArrowDownLeft} 
