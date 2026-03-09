@@ -507,6 +507,8 @@ export default function BudgetSystem() {
   const [aiResponse, setAiResponse] = useState('');
   const [aiLoading, setAiLoading] = useState(false);
   const [selectedJournalDate, setSelectedJournalDate] = useState(null);
+  const [habitWeekOffset, setHabitWeekOffset] = useState(0); // 0 = текущая неделя, -1 = прошлая и т.д.
+  const [habitMonthOffset, setHabitMonthOffset] = useState(0); // 0 = текущий месяц
 
   const todayKey = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
   const fmtDate = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
@@ -548,17 +550,33 @@ export default function BudgetSystem() {
     setAiLoading(false);
   };
 
-  const getWeekDays = (date) => {
+  const getWeekDays = (date, weekOffset = 0) => {
     const start = new Date(date);
     const day = start.getDay();
-    start.setDate(start.getDate() - day + (day === 0 ? -6 : 1));
+    start.setDate(start.getDate() - day + (day === 0 ? -6 : 1) + (weekOffset * 7));
     return Array.from({ length: 7 }, (_, i) => { const d = new Date(start); d.setDate(start.getDate() + i); return d; });
   };
 
-  const getMonthDaysHabits = (date) => {
-    const year = date.getFullYear(), month = date.getMonth();
+  const getMonthDaysHabits = (date, monthOffset = 0) => {
+    const targetDate = new Date(date.getFullYear(), date.getMonth() + monthOffset, 1);
+    const year = targetDate.getFullYear(), month = targetDate.getMonth();
     const lastDay = new Date(year, month + 1, 0).getDate();
     return Array.from({ length: lastDay }, (_, i) => new Date(year, month, i + 1));
+  };
+
+  const getHabitMonthName = (monthOffset) => {
+    const d = new Date(today.getFullYear(), today.getMonth() + monthOffset, 1);
+    return `${MONTHS[d.getMonth()]} ${d.getFullYear()}`;
+  };
+
+  const getHabitWeekRange = (weekOffset) => {
+    const days = getWeekDays(today, weekOffset);
+    const start = days[0];
+    const end = days[6];
+    if (start.getMonth() === end.getMonth()) {
+      return `${start.getDate()}–${end.getDate()} ${MONTHS_SHORT[start.getMonth()]}`;
+    }
+    return `${start.getDate()} ${MONTHS_SHORT[start.getMonth()]} – ${end.getDate()} ${MONTHS_SHORT[end.getMonth()]}`;
   };
 
   const toggleHabitCompletion = (habitId, date) => {
@@ -1593,26 +1611,68 @@ export default function BudgetSystem() {
             </div>
 
             {/* Controls */}
-            <div className="flex items-center justify-between">
+            <div className="flex items-center justify-between flex-wrap gap-2">
               <div className="flex bg-neutral-100 rounded-lg p-1">
-                <button onClick={() => setHabitView('week')} className={`px-3 py-1 rounded text-sm ${habitView === 'week' ? 'bg-white shadow font-medium' : 'text-neutral-500'}`}>Неделя</button>
-                <button onClick={() => setHabitView('month')} className={`px-3 py-1 rounded text-sm ${habitView === 'month' ? 'bg-white shadow font-medium' : 'text-neutral-500'}`}>Месяц</button>
+                <button onClick={() => { setHabitView('week'); setHabitWeekOffset(0); }} className={`px-3 py-1 rounded text-sm ${habitView === 'week' ? 'bg-white shadow font-medium' : 'text-neutral-500'}`}>Неделя</button>
+                <button onClick={() => { setHabitView('month'); setHabitMonthOffset(0); }} className={`px-3 py-1 rounded text-sm ${habitView === 'month' ? 'bg-white shadow font-medium' : 'text-neutral-500'}`}>Месяц</button>
                 <button onClick={() => setHabitView('groups')} className={`px-3 py-1 rounded text-sm ${habitView === 'groups' ? 'bg-white shadow font-medium' : 'text-neutral-500'}`}>Группы</button>
                 {archivedHabits.length > 0 && (
                   <button onClick={() => setHabitView('archive')} className={`px-3 py-1 rounded text-sm ${habitView === 'archive' ? 'bg-white shadow font-medium' : 'text-neutral-500'}`}>Архив</button>
                 )}
               </div>
-              <button onClick={() => setShowAddHabit(true)} className="p-2 bg-blue-500 text-white rounded-lg"><Plus size={18} /></button>
+              <button onClick={() => setShowAddHabit(true)} className="p-2 bg-blue-500 text-white rounded-lg hidden sm:block"><Plus size={18} /></button>
             </div>
 
+            {/* Week/Month Navigation */}
+            {(habitView === 'week' || habitView === 'month') && (
+              <div className="flex items-center justify-center gap-3 bg-white rounded-xl border p-2">
+                <button 
+                  onClick={() => habitView === 'week' ? setHabitWeekOffset(habitWeekOffset - 1) : setHabitMonthOffset(habitMonthOffset - 1)} 
+                  className="p-2 hover:bg-neutral-100 rounded-lg active:bg-neutral-200"
+                >
+                  <ChevronLeft size={20} className="text-neutral-600" />
+                </button>
+                <div className="text-center min-w-[160px]">
+                  <div className="font-medium text-neutral-800">
+                    {habitView === 'week' ? getHabitWeekRange(habitWeekOffset) : getHabitMonthName(habitMonthOffset)}
+                  </div>
+                  {habitView === 'week' && habitWeekOffset === 0 && <div className="text-xs text-blue-500">Текущая неделя</div>}
+                  {habitView === 'week' && habitWeekOffset === -1 && <div className="text-xs text-neutral-400">Прошлая неделя</div>}
+                  {habitView === 'month' && habitMonthOffset === 0 && <div className="text-xs text-blue-500">Текущий месяц</div>}
+                  {habitView === 'month' && habitMonthOffset === -1 && <div className="text-xs text-neutral-400">Прошлый месяц</div>}
+                </div>
+                <button 
+                  onClick={() => habitView === 'week' ? setHabitWeekOffset(habitWeekOffset + 1) : setHabitMonthOffset(habitMonthOffset + 1)} 
+                  className={`p-2 rounded-lg ${
+                    (habitView === 'week' && habitWeekOffset >= 0) || (habitView === 'month' && habitMonthOffset >= 0)
+                      ? 'text-neutral-300 cursor-not-allowed' 
+                      : 'hover:bg-neutral-100 active:bg-neutral-200 text-neutral-600'
+                  }`}
+                  disabled={(habitView === 'week' && habitWeekOffset >= 0) || (habitView === 'month' && habitMonthOffset >= 0)}
+                >
+                  <ChevronRight size={20} />
+                </button>
+                {((habitView === 'week' && habitWeekOffset !== 0) || (habitView === 'month' && habitMonthOffset !== 0)) && (
+                  <button 
+                    onClick={() => habitView === 'week' ? setHabitWeekOffset(0) : setHabitMonthOffset(0)} 
+                    className="px-3 py-1 text-xs bg-blue-500 text-white rounded-lg"
+                  >
+                    Сегодня
+                  </button>
+                )}
+              </div>
+            )}
+
             {/* Week View - компактные чекбоксы, широкое название */}
-            {habitView === 'week' && (
+            {habitView === 'week' && (() => {
+              const displayWeekDays = getWeekDays(today, habitWeekOffset);
+              return (
               <div className="bg-white rounded-xl border overflow-hidden">
                 <table className="w-full">
                   <thead>
                     <tr className="border-b">
                       <th className="text-left p-3 font-medium text-neutral-700">Привычка</th>
-                      {weekDays.map((day, i) => {
+                      {displayWeekDays.map((day, i) => {
                         const isToday = fmtDate(day) === todayKey;
                         return (
                           <th key={i} className={`w-10 p-2 text-center ${isToday ? 'bg-blue-500 text-white' : ''}`}>
@@ -1642,7 +1702,7 @@ export default function BudgetSystem() {
                                   </button>
                                 </div>
                               </td>
-                              {weekDays.map((day, i) => {
+                              {displayWeekDays.map((day, i) => {
                                 const done = isHabitCompleted(habit.id, day);
                                 const isToday = fmtDate(day) === todayKey;
                                 const future = day > today;
@@ -1672,11 +1732,12 @@ export default function BudgetSystem() {
 
             {/* Month View - компактные чекбоксы */}
             {habitView === 'month' && (() => {
-              const monthDays = getMonthDaysHabits(today);
+              const monthDays = getMonthDaysHabits(today, habitMonthOffset);
               // Разбиваем на недели для отображения
               const weeks = [];
               let week = [];
-              const firstDayOfMonth = new Date(today.getFullYear(), today.getMonth(), 1).getDay();
+              const targetDate = new Date(today.getFullYear(), today.getMonth() + habitMonthOffset, 1);
+              const firstDayOfMonth = targetDate.getDay();
               const startPad = firstDayOfMonth === 0 ? 6 : firstDayOfMonth - 1; // Пн=0
               
               // Добавляем пустые дни в начале
@@ -1705,12 +1766,12 @@ export default function BudgetSystem() {
                   </div>
                   
                   {/* Недели */}
-                  {weeks.map((weekDays, weekIdx) => (
+                  {weeks.map((weekDaysInMonth, weekIdx) => (
                     <div key={weekIdx} className="border-b last:border-0">
                       {/* Номера дней */}
                       <div className="grid grid-cols-[1fr_repeat(7,28px)] sm:grid-cols-[1fr_repeat(7,32px)] gap-1 px-3 py-1 bg-neutral-50/50">
                         <div className="text-[10px] text-neutral-400">Неделя {weekIdx + 1}</div>
-                        {weekDays.map((day, i) => (
+                        {weekDaysInMonth.map((day, i) => (
                           <div key={i} className={`text-[10px] text-center ${day && fmtDate(day) === todayKey ? 'text-blue-600 font-bold' : 'text-neutral-400'}`}>
                             {day ? day.getDate() : ''}
                           </div>
@@ -1726,7 +1787,7 @@ export default function BudgetSystem() {
                               <div className={`w-2 h-2 rounded-full ${HABIT_COLORS[group.color].fill} flex-shrink-0`}></div>
                               <span className="text-xs text-neutral-700 truncate">{habit.name}</span>
                             </div>
-                            {weekDays.map((day, i) => {
+                            {weekDaysInMonth.map((day, i) => {
                               if (!day) return <div key={i}></div>;
                               const done = isHabitCompleted(habit.id, day);
                               const isToday = fmtDate(day) === todayKey;
