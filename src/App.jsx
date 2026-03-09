@@ -883,11 +883,15 @@ export default function BudgetSystem() {
     );
   };
 
+  // Активная привычка для отображения в дашборде
+  const activeHabitsCount = (data?.habits || []).filter(h => !h.archived).length;
+  const todayHabitsDone = (data?.habits || []).filter(h => !h.archived && isHabitCompleted(h.id, today)).length;
+
   return (
-    <div className="min-h-screen bg-neutral-50" style={{ fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" }}>
-      <header className="bg-white border-b border-neutral-200 sticky top-0 z-50">
-        <div className="max-w-4xl mx-auto px-3 sm:px-4 py-2 sm:py-3">
-          {/* Главные вкладки: Финансы / Привычки */}
+    <div className="min-h-screen bg-neutral-50 pb-20 sm:pb-0" style={{ fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" }}>
+      {/* Desktop Header */}
+      <header className="hidden sm:block bg-white border-b border-neutral-200 sticky top-0 z-50">
+        <div className="max-w-4xl mx-auto px-4 py-3">
           <div className="flex items-center justify-between mb-2">
             <div className="flex bg-neutral-100 rounded-lg p-1">
               <button onClick={() => setMainTab('finance')} className={`px-4 py-2 rounded-md text-sm font-medium transition-all ${mainTab === 'finance' ? 'bg-white shadow-sm text-neutral-800' : 'text-neutral-500'}`}>
@@ -902,65 +906,139 @@ export default function BudgetSystem() {
             </button>
           </div>
 
-          {/* Подвкладки для Финансов */}
           {mainTab === 'finance' && (
             <>
-              <div className="flex items-center justify-center gap-2 sm:gap-3 mb-2">
-                <button onClick={() => changeMonth(-1)} className="p-1 sm:p-1.5 hover:bg-neutral-100 rounded-lg transition-colors"><ChevronLeft size={20} className="text-neutral-400" /></button>
-                <div className="text-center min-w-[120px] sm:min-w-[150px]">
-                  <h1 className="text-base sm:text-lg font-semibold text-neutral-800">{monthName}</h1>
-                  <div className="text-[10px] sm:text-xs text-neutral-400">Сегодня: {currentDay} {MONTHS_SHORT[today.getMonth()]}</div>
+              <div className="flex items-center justify-center gap-3 mb-2">
+                <button onClick={() => changeMonth(-1)} className="p-1.5 hover:bg-neutral-100 rounded-lg"><ChevronLeft size={20} className="text-neutral-400" /></button>
+                <div className="text-center min-w-[150px]">
+                  <h1 className="text-lg font-semibold text-neutral-800">{monthName}</h1>
+                  <div className="text-xs text-neutral-400">Сегодня: {currentDay} {MONTHS_SHORT[today.getMonth()]}</div>
                 </div>
-                <button onClick={() => changeMonth(1)} className="p-1 sm:p-1.5 hover:bg-neutral-100 rounded-lg transition-colors"><ChevronRight size={20} className="text-neutral-400" /></button>
+                <button onClick={() => changeMonth(1)} className="p-1.5 hover:bg-neutral-100 rounded-lg"><ChevronRight size={20} className="text-neutral-400" /></button>
               </div>
-              <div className="overflow-x-auto -mx-3 px-3 sm:mx-0 sm:px-0 scrollbar-hide">
-                <div className="flex items-center gap-1 bg-neutral-100 rounded-lg p-1 min-w-max">
-                  {[
-                    { id: 'budget', label: 'Бюджет', icon: '📊' },
-                    { id: 'employees', label: 'Сотрудники', icon: '👥' },
-                    { id: 'recurring', label: 'Пост.', icon: '🔄' },
-                    { id: 'credits', label: 'Кредиты', icon: '💳' },
-                    { id: 'dds', label: 'ДДС', icon: '📋' },
-                  ].map(t => (
-                    <button key={t.id} onClick={() => setTab(t.id)} className={`px-2 sm:px-3 py-1.5 rounded-md text-xs sm:text-sm transition-all whitespace-nowrap ${tab === t.id ? 'bg-white text-neutral-800 shadow-sm font-medium' : 'text-neutral-500 hover:text-neutral-700'}`}>
-                      <span className="sm:hidden">{t.icon}</span>
-                      <span className="hidden sm:inline">{t.label}</span>
-                      <span className="sm:hidden ml-1">{t.id === 'recurring' ? 'Пост.' : t.id === 'employees' ? 'Сотр.' : t.label}</span>
-                      {t.id === 'dds' && dds.length > 0 && <span className="ml-1 text-[10px] sm:text-xs bg-emerald-500 text-white px-1 sm:px-1.5 rounded-full">{dds.length}</span>}
-                    </button>
-                  ))}
-                </div>
+              <div className="flex items-center gap-1 bg-neutral-100 rounded-lg p-1">
+                {[
+                  { id: 'budget', label: 'Бюджет' },
+                  { id: 'employees', label: 'Сотрудники' },
+                  { id: 'recurring', label: 'Пост.' },
+                  { id: 'credits', label: 'Кредиты' },
+                  { id: 'dds', label: 'ДДС' },
+                ].map(t => (
+                  <button key={t.id} onClick={() => setTab(t.id)} className={`px-3 py-1.5 rounded-md text-sm transition-all ${tab === t.id ? 'bg-white text-neutral-800 shadow-sm font-medium' : 'text-neutral-500'}`}>
+                    {t.label}
+                    {t.id === 'dds' && dds.length > 0 && <span className="ml-1 text-xs bg-emerald-500 text-white px-1.5 rounded-full">{dds.length}</span>}
+                  </button>
+                ))}
               </div>
             </>
           )}
 
-          {/* Подвкладки для Привычек */}
           {mainTab === 'habits' && (
             <>
-              <div className="flex items-center justify-center mb-2">
-                <div className="text-center">
-                  <h1 className="text-base sm:text-lg font-semibold text-neutral-800">Трекер привычек</h1>
-                  <div className="text-[10px] sm:text-xs text-neutral-400">Сегодня: {currentDay} {MONTHS_SHORT[today.getMonth()]}</div>
-                </div>
+              <div className="text-center mb-2">
+                <h1 className="text-lg font-semibold text-neutral-800">Трекер привычек</h1>
+                <div className="text-xs text-neutral-400">Сегодня: {currentDay} {MONTHS_SHORT[today.getMonth()]}</div>
               </div>
-              <div className="overflow-x-auto -mx-3 px-3 sm:mx-0 sm:px-0 scrollbar-hide">
-                <div className="flex items-center gap-1 bg-neutral-100 rounded-lg p-1 min-w-max">
-                  {[
-                    { id: 'habits', label: 'Трекер', icon: '✅' },
-                    { id: 'journal', label: 'Дневник', icon: '📝' },
-                  ].map(t => (
-                    <button key={t.id} onClick={() => setTab(t.id)} className={`px-3 sm:px-4 py-1.5 rounded-md text-xs sm:text-sm transition-all whitespace-nowrap ${tab === t.id ? 'bg-white text-neutral-800 shadow-sm font-medium' : 'text-neutral-500 hover:text-neutral-700'}`}>
-                      <span className="sm:hidden">{t.icon}</span>
-                      <span className="hidden sm:inline">{t.label}</span>
-                      <span className="sm:hidden ml-1">{t.label}</span>
-                    </button>
-                  ))}
-                </div>
+              <div className="flex items-center gap-1 bg-neutral-100 rounded-lg p-1">
+                {[
+                  { id: 'habits', label: 'Трекер' },
+                  { id: 'journal', label: 'Дневник' },
+                ].map(t => (
+                  <button key={t.id} onClick={() => setTab(t.id)} className={`px-4 py-1.5 rounded-md text-sm transition-all ${tab === t.id ? 'bg-white text-neutral-800 shadow-sm font-medium' : 'text-neutral-500'}`}>
+                    {t.label}
+                  </button>
+                ))}
               </div>
             </>
           )}
         </div>
       </header>
+
+      {/* Mobile Header - минималистичный */}
+      <header className="sm:hidden bg-white border-b border-neutral-200 sticky top-0 z-50 safe-area-top">
+        <div className="px-4 py-3">
+          {mainTab === 'finance' && (
+            <div className="flex items-center justify-between">
+              <button onClick={() => changeMonth(-1)} className="p-2 -ml-2 active:bg-neutral-100 rounded-xl"><ChevronLeft size={24} className="text-neutral-600" /></button>
+              <div className="text-center">
+                <h1 className="text-lg font-semibold text-neutral-800">{monthName}</h1>
+                <div className="text-[11px] text-neutral-400">Сегодня: {currentDay} {MONTHS_SHORT[today.getMonth()]}</div>
+              </div>
+              <button onClick={() => changeMonth(1)} className="p-2 -mr-2 active:bg-neutral-100 rounded-xl"><ChevronRight size={24} className="text-neutral-600" /></button>
+            </div>
+          )}
+          {mainTab === 'habits' && (
+            <div className="flex items-center justify-between">
+              <div>
+                <h1 className="text-lg font-semibold text-neutral-800">
+                  {tab === 'habits' ? 'Привычки' : 'Дневник'}
+                </h1>
+                <div className="text-[11px] text-neutral-400">{currentDay} {MONTHS_SHORT[today.getMonth()]} • {todayHabitsDone}/{activeHabitsCount} выполнено</div>
+              </div>
+              {tab === 'habits' && (
+                <button onClick={() => setShowAddHabit(true)} className="w-10 h-10 bg-blue-500 rounded-full flex items-center justify-center shadow-lg active:scale-95 transition-transform">
+                  <Plus size={22} className="text-white" />
+                </button>
+              )}
+            </div>
+          )}
+        </div>
+        
+        {/* Mobile sub-tabs */}
+        {mainTab === 'finance' && (
+          <div className="px-2 pb-2 overflow-x-auto scrollbar-hide">
+            <div className="flex gap-1 min-w-max">
+              {[
+                { id: 'budget', label: 'Бюджет', icon: '📊' },
+                { id: 'employees', label: 'Сотрудники', icon: '👥' },
+                { id: 'recurring', label: 'Постоянные', icon: '🔄' },
+                { id: 'credits', label: 'Кредиты', icon: '💳' },
+                { id: 'dds', label: 'ДДС', icon: '📋' },
+              ].map(t => (
+                <button key={t.id} onClick={() => setTab(t.id)} className={`px-3 py-2 rounded-xl text-sm transition-all whitespace-nowrap ${tab === t.id ? 'bg-blue-500 text-white font-medium' : 'bg-neutral-100 text-neutral-600 active:bg-neutral-200'}`}>
+                  {t.label}
+                  {t.id === 'dds' && dds.length > 0 && <span className="ml-1 text-xs bg-white/20 px-1.5 rounded-full">{dds.length}</span>}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+        
+        {mainTab === 'habits' && (
+          <div className="px-4 pb-2 flex gap-2">
+            {[
+              { id: 'habits', label: 'Трекер' },
+              { id: 'journal', label: 'Дневник' },
+            ].map(t => (
+              <button key={t.id} onClick={() => setTab(t.id)} className={`flex-1 py-2 rounded-xl text-sm font-medium transition-all ${tab === t.id ? 'bg-blue-500 text-white' : 'bg-neutral-100 text-neutral-600'}`}>
+                {t.label}
+              </button>
+            ))}
+          </div>
+        )}
+      </header>
+
+      {/* Bottom Navigation - Mobile Only */}
+      <nav className="sm:hidden fixed bottom-0 left-0 right-0 bg-white border-t border-neutral-200 z-50 safe-area-bottom">
+        <div className="flex items-center justify-around py-2">
+          <button onClick={() => { setMainTab('finance'); setTab('budget'); }} className={`flex flex-col items-center gap-0.5 px-6 py-1 rounded-xl transition-all ${mainTab === 'finance' ? 'text-blue-600' : 'text-neutral-400'}`}>
+            <TrendingUp size={24} strokeWidth={mainTab === 'finance' ? 2.5 : 1.5} />
+            <span className="text-[10px] font-medium">Финансы</span>
+          </button>
+          <button onClick={() => { setMainTab('habits'); setTab('habits'); }} className={`flex flex-col items-center gap-0.5 px-6 py-1 rounded-xl transition-all ${mainTab === 'habits' && tab === 'habits' ? 'text-blue-600' : 'text-neutral-400'}`}>
+            <Target size={24} strokeWidth={mainTab === 'habits' && tab === 'habits' ? 2.5 : 1.5} />
+            <span className="text-[10px] font-medium">Привычки</span>
+          </button>
+          <button onClick={() => { setMainTab('habits'); setTab('journal'); }} className={`flex flex-col items-center gap-0.5 px-6 py-1 rounded-xl transition-all ${mainTab === 'habits' && tab === 'journal' ? 'text-blue-600' : 'text-neutral-400'}`}>
+            <BookOpen size={24} strokeWidth={mainTab === 'habits' && tab === 'journal' ? 2.5 : 1.5} />
+            <span className="text-[10px] font-medium">Дневник</span>
+          </button>
+          <button onClick={handleLogout} className="flex flex-col items-center gap-0.5 px-6 py-1 text-neutral-400">
+            <LogOut size={24} strokeWidth={1.5} />
+            <span className="text-[10px] font-medium">Выход</span>
+          </button>
+        </div>
+      </nav>
 
       <main className="max-w-4xl mx-auto px-3 sm:px-4 py-4 sm:py-6">
         {/* ФИНАНСЫ */}
@@ -1592,48 +1670,91 @@ export default function BudgetSystem() {
               </div>
             )}
 
-            {/* Month View */}
+            {/* Month View - компактные чекбоксы */}
             {habitView === 'month' && (() => {
               const monthDays = getMonthDaysHabits(today);
+              // Разбиваем на недели для отображения
+              const weeks = [];
+              let week = [];
+              const firstDayOfMonth = new Date(today.getFullYear(), today.getMonth(), 1).getDay();
+              const startPad = firstDayOfMonth === 0 ? 6 : firstDayOfMonth - 1; // Пн=0
+              
+              // Добавляем пустые дни в начале
+              for (let i = 0; i < startPad; i++) week.push(null);
+              
+              monthDays.forEach((day, i) => {
+                week.push(day);
+                if (week.length === 7) {
+                  weeks.push(week);
+                  week = [];
+                }
+              });
+              if (week.length > 0) {
+                while (week.length < 7) week.push(null);
+                weeks.push(week);
+              }
+
               return (
-                <div className="space-y-3">
-                  {groups.map(group => {
-                    const groupHabits = activeHabits.filter(h => h.groupId === group.id);
-                    if (groupHabits.length === 0) return null;
-                    return (
-                      <div key={group.id} className="bg-white rounded-xl border overflow-hidden">
-                        <div className={`px-3 py-2 ${HABIT_COLORS[group.color].bg} text-sm font-medium ${HABIT_COLORS[group.color].text}`}>{group.name}</div>
-                        {groupHabits.map(habit => (
-                          <div key={habit.id} className="p-3 border-t group/row">
-                            <div className="flex items-center justify-between mb-2">
-                              <span className="text-sm font-medium">{habit.name}</span>
-                              <button onClick={() => archiveHabit(habit.id)} className="opacity-0 group-hover/row:opacity-100 p-1 hover:bg-neutral-200 rounded" title="Архивировать">
-                                <Archive size={12} className="text-neutral-400" />
-                              </button>
-                            </div>
-                            <div className="grid grid-cols-7 gap-1">
-                              {monthDays.map((day, i) => {
-                                const done = isHabitCompleted(habit.id, day);
-                                const isToday = fmtDate(day) === todayKey;
-                                const future = day > today;
-                                return (
-                                  <button key={i} onClick={() => !future && toggleHabitCompletion(habit.id, day)} disabled={future}
-                                    className={`aspect-square rounded text-[10px] flex items-center justify-center ${
-                                      done ? `${HABIT_COLORS[group.color].fill} text-white` :
-                                      isToday ? 'ring-2 ring-blue-500 bg-blue-50 text-blue-600 font-bold' :
-                                      future ? 'bg-neutral-50 text-neutral-300' :
-                                      'bg-neutral-100 text-neutral-500 hover:bg-neutral-200'
-                                    }`}>
-                                    {day.getDate()}
-                                  </button>
-                                );
-                              })}
-                            </div>
+                <div className="bg-white rounded-xl border overflow-hidden">
+                  {/* Header с днями недели */}
+                  <div className="grid grid-cols-[1fr_repeat(7,28px)] sm:grid-cols-[1fr_repeat(7,32px)] gap-1 px-3 py-2 border-b bg-neutral-50">
+                    <div className="text-xs text-neutral-500 font-medium">Привычка</div>
+                    {DAYS_SHORT.map((d, i) => (
+                      <div key={i} className="text-[10px] text-neutral-400 text-center">{d}</div>
+                    ))}
+                  </div>
+                  
+                  {/* Недели */}
+                  {weeks.map((weekDays, weekIdx) => (
+                    <div key={weekIdx} className="border-b last:border-0">
+                      {/* Номера дней */}
+                      <div className="grid grid-cols-[1fr_repeat(7,28px)] sm:grid-cols-[1fr_repeat(7,32px)] gap-1 px-3 py-1 bg-neutral-50/50">
+                        <div className="text-[10px] text-neutral-400">Неделя {weekIdx + 1}</div>
+                        {weekDays.map((day, i) => (
+                          <div key={i} className={`text-[10px] text-center ${day && fmtDate(day) === todayKey ? 'text-blue-600 font-bold' : 'text-neutral-400'}`}>
+                            {day ? day.getDate() : ''}
                           </div>
                         ))}
                       </div>
-                    );
-                  })}
+                      
+                      {/* Привычки */}
+                      {groups.map(group => {
+                        const groupHabits = activeHabits.filter(h => h.groupId === group.id);
+                        return groupHabits.map(habit => (
+                          <div key={habit.id} className="grid grid-cols-[1fr_repeat(7,28px)] sm:grid-cols-[1fr_repeat(7,32px)] gap-1 px-3 py-1.5 hover:bg-neutral-50 group/row">
+                            <div className="flex items-center gap-1 min-w-0">
+                              <div className={`w-2 h-2 rounded-full ${HABIT_COLORS[group.color].fill} flex-shrink-0`}></div>
+                              <span className="text-xs text-neutral-700 truncate">{habit.name}</span>
+                            </div>
+                            {weekDays.map((day, i) => {
+                              if (!day) return <div key={i}></div>;
+                              const done = isHabitCompleted(habit.id, day);
+                              const isToday = fmtDate(day) === todayKey;
+                              const future = day > today;
+                              return (
+                                <div key={i} className="flex justify-center">
+                                  <button 
+                                    onClick={() => !future && toggleHabitCompletion(habit.id, day)} 
+                                    disabled={future}
+                                    className={`w-5 h-5 rounded flex items-center justify-center transition-all ${
+                                      done ? `${HABIT_COLORS[group.color].fill} text-white` :
+                                      isToday ? `border-2 ${HABIT_COLORS[group.color].border} bg-blue-50` :
+                                      future ? 'bg-neutral-100' :
+                                      `border ${HABIT_COLORS[group.color].border} hover:bg-neutral-50`
+                                    }`}
+                                  >
+                                    {done && <Check size={10} />}
+                                  </button>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        ));
+                      })}
+                    </div>
+                  ))}
+                  
+                  {activeHabits.length === 0 && <div className="p-8 text-center text-neutral-400 text-sm">Нет привычек</div>}
                 </div>
               );
             })()}
