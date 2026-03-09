@@ -567,7 +567,6 @@ export default function BudgetSystem() {
       save(newData);
     }
   };
-  };
 
   const isRecurringPaid = (id) => (data.dds?.[selectedMonth] || []).some(d => d.type === 'recurring' && d.recurringId === id);
   const isRecurringSkipped = (id) => data.skippedRecurring?.[selectedMonth]?.includes(id);
