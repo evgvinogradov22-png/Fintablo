@@ -805,16 +805,16 @@ export default function BudgetSystem() {
   const planRecurring = totalRecurring - ddsRecurring;
 
   // Суммы из ДДС
-  const ddsIncome = dds.filter(d => d.type === 'income').reduce((s, d) => s + d.amount, 0);
-  const ddsExpenses = dds.filter(d => d.type === 'expense').reduce((s, d) => s + d.amount, 0);
-  const ddsSalary = dds.filter(d => d.type === 'salary').reduce((s, d) => s + d.amount, 0);
-  const ddsCredits = dds.filter(d => d.type === 'credit').reduce((s, d) => s + d.amount, 0);
-  const ddsDebts = dds.filter(d => d.type === 'debt').reduce((s, d) => s + d.amount, 0);
+  const ddsIncome = dds.filter(d => d.type === 'income').reduce((s, d) => s + (Number(d.amount) || 0), 0);
+  const ddsExpenses = dds.filter(d => d.type === 'expense').reduce((s, d) => s + (Number(d.amount) || 0), 0);
+  const ddsSalary = dds.filter(d => d.type === 'salary').reduce((s, d) => s + (Number(d.amount) || 0), 0);
+  const ddsCredits = dds.filter(d => d.type === 'credit').reduce((s, d) => s + (Number(d.amount) || 0), 0);
+  const ddsDebts = dds.filter(d => d.type === 'debt').reduce((s, d) => s + (Number(d.amount) || 0), 0);
 
   // План (что осталось)
-  const planIncome = (md.income || []).reduce((s, i) => s + i.amount, 0);
-  const planExpenses = (md.expenses || []).reduce((s, i) => s + i.amount, 0);
-  const planDebts = (md.debts || []).reduce((s, i) => s + i.amount, 0);
+  const planIncome = (md.income || []).reduce((s, i) => s + (Number(i.amount) || 0), 0);
+  const planExpenses = (md.expenses || []).reduce((s, i) => s + (Number(i.amount) || 0), 0);
+  const planDebts = (md.debts || []).reduce((s, i) => s + (Number(i.amount) || 0), 0);
   const planSalary = totalSalary - ddsSalary;
   const planCredits = totalCreditsMonthly - ddsCredits;
 
@@ -994,8 +994,8 @@ export default function BudgetSystem() {
   const isOverdueItem = (item) => isCurrentMonth && item.day < currentDay;
 
   const Section = ({ title, icon: Icon, items, type, bgColor, iconColor, textColor, isIncome, overdueItems = [] }) => {
-    const total = items.reduce((s, i) => s + i.amount, 0);
-    const overdueTotal = overdueItems.reduce((s, i) => s + i.amount, 0);
+    const total = items.reduce((s, i) => s + (Number(i.amount) || 0), 0);
+    const overdueTotal = overdueItems.reduce((s, i) => s + (Number(i.amount) || 0), 0);
     const hasOverdue = overdueItems.length > 0;
     
     return (
@@ -1823,8 +1823,8 @@ export default function BudgetSystem() {
 
           return (
           <div className="space-y-4">
-            {/* AI Quote */}
-            <div className="bg-gradient-to-r from-violet-500 to-blue-500 rounded-xl p-4 text-white">
+            {/* AI Quote - только десктоп */}
+            <div className="hidden sm:block bg-gradient-to-r from-violet-500 to-blue-500 rounded-xl p-4 text-white">
               <div className="flex items-start gap-3">
                 <Sparkles size={20} />
                 <div className="flex-1">
@@ -1837,8 +1837,8 @@ export default function BudgetSystem() {
               </div>
             </div>
 
-            {/* Dashboard */}
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            {/* Dashboard - только десктоп */}
+            <div className="hidden sm:grid grid-cols-4 gap-3">
               {/* Сегодня - большой круг */}
               <div className="col-span-2 sm:col-span-1 bg-white rounded-xl border-2 border-blue-200 p-4">
                 <div className="flex items-center gap-4">
@@ -1889,8 +1889,8 @@ export default function BudgetSystem() {
               </div>
             </div>
 
-            {/* Controls */}
-            <div className="flex items-center justify-between flex-wrap gap-2">
+            {/* Controls - только десктоп */}
+            <div className="hidden sm:flex items-center justify-between flex-wrap gap-2">
               <div className="flex bg-neutral-100 rounded-lg p-1">
                 <button onClick={() => { setHabitView('week'); setHabitWeekOffset(0); }} className={`px-3 py-1 rounded text-sm ${habitView === 'week' ? 'bg-white shadow font-medium' : 'text-neutral-500'}`}>Неделя</button>
                 <button onClick={() => { setHabitView('month'); setHabitMonthOffset(0); }} className={`px-3 py-1 rounded text-sm ${habitView === 'month' ? 'bg-white shadow font-medium' : 'text-neutral-500'}`}>Месяц</button>
@@ -1899,12 +1899,12 @@ export default function BudgetSystem() {
                   <button onClick={() => setHabitView('archive')} className={`px-3 py-1 rounded text-sm ${habitView === 'archive' ? 'bg-white shadow font-medium' : 'text-neutral-500'}`}>Архив</button>
                 )}
               </div>
-              <button onClick={() => setShowAddHabit(true)} className="p-2 bg-blue-500 text-white rounded-lg hidden sm:block"><Plus size={18} /></button>
+              <button onClick={() => setShowAddHabit(true)} className="p-2 bg-blue-500 text-white rounded-lg"><Plus size={18} /></button>
             </div>
 
             {/* Week/Month Navigation */}
             {(habitView === 'week' || habitView === 'month') && (
-              <div className="flex items-center justify-center gap-3 bg-white rounded-xl border p-2">
+              <div className="flex items-center justify-center gap-3 bg-white rounded-2xl sm:rounded-xl border p-2">
                 <button 
                   onClick={() => habitView === 'week' ? setHabitWeekOffset(habitWeekOffset - 1) : setHabitMonthOffset(habitMonthOffset - 1)} 
                   className="p-2 hover:bg-neutral-100 rounded-lg active:bg-neutral-200"
@@ -1946,17 +1946,17 @@ export default function BudgetSystem() {
             {habitView === 'week' && (() => {
               const displayWeekDays = getWeekDays(today, habitWeekOffset);
               return (
-              <div className="bg-white rounded-xl border overflow-hidden">
+              <div className="bg-white rounded-2xl sm:rounded-xl border overflow-hidden">
                 <table className="w-full">
                   <thead>
                     <tr className="border-b">
-                      <th className="text-left p-3 font-medium text-neutral-700">Привычка</th>
+                      <th className="text-left p-2 sm:p-3 font-medium text-neutral-700 text-sm">Привычка</th>
                       {displayWeekDays.map((day, i) => {
                         const isToday = fmtDate(day) === todayKey;
                         return (
-                          <th key={i} className={`w-10 p-2 text-center ${isToday ? 'bg-blue-500 text-white' : ''}`}>
-                            <div className={`text-[10px] font-normal ${isToday ? 'text-blue-100' : 'text-neutral-400'}`}>{DAYS_SHORT[i]}</div>
-                            <div className="text-sm font-bold">{day.getDate()}</div>
+                          <th key={i} className={`w-8 sm:w-10 p-1 sm:p-2 text-center ${isToday ? 'bg-blue-500 text-white' : ''}`}>
+                            <div className={`text-[9px] sm:text-[10px] font-normal ${isToday ? 'text-blue-100' : 'text-neutral-400'}`}>{DAYS_SHORT[i]}</div>
+                            <div className="text-xs sm:text-sm font-bold">{day.getDate()}</div>
                           </th>
                         );
                       })}
@@ -1969,7 +1969,7 @@ export default function BudgetSystem() {
                       return (
                         <React.Fragment key={group.id}>
                           <tr className={HABIT_COLORS[group.color].bg}>
-                            <td colSpan={8} className={`px-3 py-1 text-xs font-medium ${HABIT_COLORS[group.color].text}`}>{group.name}</td>
+                            <td colSpan={8} className={`px-2 sm:px-3 py-1 text-xs font-medium ${HABIT_COLORS[group.color].text}`}>{group.name}</td>
                           </tr>
                           {groupHabits.map(habit => (
                             <tr 
@@ -1983,11 +1983,11 @@ export default function BudgetSystem() {
                                 dragOverHabit === habit.id ? 'bg-blue-50 border-t-2 border-t-blue-400' : ''
                               }`}
                             >
-                              <td className="p-3">
-                                <div className="flex items-center gap-2">
-                                  <GripVertical size={14} className="text-neutral-300 group-hover/row:text-neutral-400 flex-shrink-0 cursor-grab" />
-                                  <span className="text-sm text-neutral-700">{habit.name}</span>
-                                  <div className="opacity-0 group-hover/row:opacity-100 flex items-center gap-1 ml-auto">
+                              <td className="p-2 sm:p-3">
+                                <div className="flex items-center gap-1 sm:gap-2">
+                                  <GripVertical size={12} className="text-neutral-300 group-hover/row:text-neutral-400 flex-shrink-0 cursor-grab sm:w-[14px] sm:h-[14px]" />
+                                  <span className="text-xs sm:text-sm text-neutral-700 truncate">{habit.name}</span>
+                                  <div className="hidden sm:flex opacity-0 group-hover/row:opacity-100 items-center gap-1 ml-auto">
                                     <button onClick={() => archiveHabit(habit.id)} className="p-1 hover:bg-amber-100 rounded" title="В архив (история сохранится)">
                                       <Archive size={12} className="text-amber-500" />
                                     </button>
@@ -2002,9 +2002,9 @@ export default function BudgetSystem() {
                                 const isToday = fmtDate(day) === todayKey;
                                 const future = day > today;
                                 return (
-                                  <td key={i} className={`w-10 p-1 text-center ${isToday ? 'bg-blue-50' : ''}`}>
+                                  <td key={i} className={`w-8 sm:w-10 p-0.5 sm:p-1 text-center ${isToday ? 'bg-blue-50' : ''}`}>
                                     <button onClick={() => !future && toggleHabitCompletion(habit.id, day)} disabled={future} 
-                                      className={`w-6 h-6 mx-auto rounded flex items-center justify-center transition-all ${
+                                      className={`w-6 h-6 sm:w-7 sm:h-7 mx-auto rounded flex items-center justify-center transition-all ${
                                         done ? `${HABIT_COLORS[group.color].fill} text-white` : 
                                         future ? 'bg-neutral-100' : 
                                         `border-2 ${HABIT_COLORS[group.color].border} hover:bg-neutral-50`
