@@ -251,13 +251,59 @@ export default function BudgetSystem() {
     try {
       const result = await storage.get(STORAGE_KEY);
       if (result?.value) {
-        setData(JSON.parse(result.value));
+        let loadedData = JSON.parse(result.value);
+        // Автоматически переносим просроченные долги на сегодня
+        loadedData = moveOverdueDebtsToToday(loadedData);
+        setData(loadedData);
+        await storage.set(STORAGE_KEY, JSON.stringify(loadedData));
       } else {
         setData(defaultData);
         await storage.set(STORAGE_KEY, JSON.stringify(defaultData));
       }
     } catch (e) { setData(defaultData); }
     setLoading(false);
+  };
+
+  // Переносит просроченные долги на текущий день
+  const moveOverdueDebtsToToday = (inputData) => {
+    const newData = JSON.parse(JSON.stringify(inputData));
+    const todayDate = new Date();
+    const currentDayNum = todayDate.getDate();
+    const currentMonth = `${todayDate.getFullYear()}-${String(todayDate.getMonth() + 1).padStart(2, '0')}`;
+    
+    // Проверяем долги текущего месяца
+    if (newData.months?.[currentMonth]?.debts) {
+      newData.months[currentMonth].debts = newData.months[currentMonth].debts.map(debt => {
+        if (debt.day < currentDayNum) {
+          return { ...debt, day: currentDayNum };
+        }
+        return debt;
+      });
+    }
+    
+    // Переносим долги из прошлых месяцев в текущий
+    Object.keys(newData.months || {}).forEach(monthKey => {
+      if (monthKey < currentMonth && newData.months[monthKey]?.debts?.length > 0) {
+        if (!newData.months[currentMonth]) {
+          newData.months[currentMonth] = { income: [], expenses: [], debts: [] };
+        }
+        if (!newData.months[currentMonth].debts) {
+          newData.months[currentMonth].debts = [];
+        }
+        // Переносим каждый долг
+        newData.months[monthKey].debts.forEach(debt => {
+          newData.months[currentMonth].debts.push({
+            ...debt,
+            id: Date.now() + Math.random(),
+            day: currentDayNum
+          });
+        });
+        // Очищаем долги в прошлом месяце
+        newData.months[monthKey].debts = [];
+      }
+    });
+    
+    return newData;
   };
 
   const save = async (newData) => {
@@ -1503,7 +1549,21 @@ export default function BudgetSystem() {
             className={`bg-transparent focus:outline-none focus:bg-neutral-50 rounded min-w-0 font-medium ${isOverdue ? 'text-red-700' : 'text-neutral-800'}`}
           />
         </div>
-        <div className="text-xs text-neutral-400 mt-0.5">{item.day} {MONTHS_SHORT[month - 1]}</div>
+        <div className="flex items-center gap-1 mt-0.5">
+          {type === 'debts' ? (
+            <select
+              value={item.day}
+              onChange={(e) => onUpdate('day', parseInt(e.target.value))}
+              className="text-xs text-neutral-500 bg-transparent hover:bg-neutral-100 rounded px-1 py-0.5 cursor-pointer focus:outline-none focus:ring-1 focus:ring-blue-300"
+            >
+              {Array.from({ length: 31 }, (_, i) => i + 1).map(d => (
+                <option key={d} value={d}>{d} {MONTHS_SHORT[month - 1]}</option>
+              ))}
+            </select>
+          ) : (
+            <span className="text-xs text-neutral-400">{item.day} {MONTHS_SHORT[month - 1]}</span>
+          )}
+        </div>
       </div>
       <EditableInput 
         value={item.amount} 
