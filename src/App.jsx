@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Check, ChevronLeft, ChevronRight, Plus, Trash2, Users, ArrowDownLeft, ArrowUpRight, CreditCard, TrendingUp, List, Lock, LogOut, Target, BarChart3, Folder, X, Sparkles, Send, BookOpen, Edit3, Save, Archive, RotateCcw, GripVertical, Calendar, Clock, User, Eye, ChevronDown, Hash, MoreHorizontal, Bell, Search, Settings, Filter, Wallet } from 'lucide-react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine } from 'recharts';
 import storage from './storage';
@@ -625,16 +625,40 @@ export default function BudgetSystem() {
   const [showAddProject, setShowAddProject] = useState(false);
   const [newProject, setNewProject] = useState({ name: '', color: 'blue', parentId: null });
   const [editingTask, setEditingTask] = useState(null);
+  const [currentTime, setCurrentTime] = useState(new Date());
+  const calendarGridRef = useRef(null);
+  
+  // Update current time every minute
+  useEffect(() => {
+    const interval = setInterval(() => setCurrentTime(new Date()), 60000);
+    return () => clearInterval(interval);
+  }, []);
+  
+  // Auto-scroll to current time on mount and view change
+  useEffect(() => {
+    if (calendarGridRef.current && (calendarView === 'week' || calendarView === 'day')) {
+      const now = new Date();
+      const currentHour = now.getHours();
+      const scrollTo = Math.max(0, (currentHour - 7) * 60 - 60); // Scroll to 1 hour before current
+      calendarGridRef.current.scrollTop = scrollTo;
+    }
+  }, [calendarView, mainTab]);
   
   // Клик на пустую ячейку - создать задачу
-  const handleCellClick = (date, hour = 10) => {
+  const handleCellClick = (date, hourWithMinutes = 10) => {
     const dateStr = fmtDateCal(date);
+    const hour = Math.floor(hourWithMinutes);
+    const minutes = Math.round((hourWithMinutes - hour) * 60 / 15) * 15;
+    const endTotalMin = hour * 60 + minutes + 60;
+    const endHour = Math.floor(endTotalMin / 60);
+    const endMin = endTotalMin % 60;
+    
     setNewTask({
       title: '',
       description: '',
       date: dateStr,
-      time: `${String(hour).padStart(2, '0')}:00`,
-      endTime: `${String(hour + 1).padStart(2, '0')}:00`,
+      time: `${String(hour).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`,
+      endTime: `${String(endHour).padStart(2, '0')}:${String(endMin).padStart(2, '0')}`,
       duration: 60,
       color: 'blue',
       type: 'executor',
@@ -881,16 +905,26 @@ export default function BudgetSystem() {
     e.dataTransfer.dropEffect = 'move';
   };
   
-  const handleTaskDrop = (e, newDate, newHour = null) => {
+  const handleTaskDrop = (e, newDate, newHour = null, dropY = null) => {
     e.preventDefault();
     if (!draggedTask) return;
     
     const updates = { date: fmtDateCal(newDate) };
     if (newHour !== null) {
-      updates.time = `${String(newHour).padStart(2, '0')}:00`;
+      // Calculate minutes based on drop position (15-min increments)
+      let minutes = 0;
+      if (dropY !== null) {
+        const cellHeight = 60; // Each hour cell is 60px
+        const relativeY = dropY % cellHeight;
+        minutes = Math.round(relativeY / cellHeight * 60 / 15) * 15; // Snap to 15 min
+        if (minutes >= 60) minutes = 45;
+      }
+      
+      updates.time = `${String(newHour).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`;
       const duration = draggedTask.duration || 60;
-      const endHour = newHour + Math.floor(duration / 60);
-      const endMin = duration % 60;
+      const totalMinutes = newHour * 60 + minutes + duration;
+      const endHour = Math.floor(totalMinutes / 60);
+      const endMin = totalMinutes % 60;
       updates.endTime = `${String(endHour).padStart(2, '0')}:${String(endMin).padStart(2, '0')}`;
     }
     
@@ -1769,7 +1803,7 @@ export default function BudgetSystem() {
         )}
 
         {/* Main Content */}
-        <main className={`flex-1 ${mainTab === 'calendar' ? 'sm:overflow-hidden' : 'max-w-4xl mx-auto'} px-4 py-4 sm:py-6 sm:px-4`}>
+        <main className={`flex-1 ${mainTab === 'calendar' ? 'sm:overflow-hidden sm:flex sm:flex-col' : 'max-w-4xl mx-auto'} px-4 py-4 sm:py-6 sm:px-4`}>
         {/* ФИНАНСЫ */}
         {mainTab === 'finance' && (
           <>
@@ -2802,9 +2836,9 @@ export default function BudgetSystem() {
 
         {/* КАЛЕНДАРЬ */}
         {mainTab === 'calendar' && (
-          <>
-            {/* Calendar Header - Fixed on all views */}
-            <div className="bg-white sm:bg-transparent rounded-xl sm:rounded-none border sm:border-0 border-neutral-200 p-3 sm:p-0 mb-4 sticky top-0 z-10 sm:relative">
+          <div className="flex flex-col h-full">
+            {/* Calendar Header - Fixed at top */}
+            <div className="bg-white rounded-xl border border-neutral-200 p-3 mb-3 flex-shrink-0">
               <div className="flex items-center justify-between flex-wrap gap-3">
                 <div className="flex items-center gap-2 sm:gap-4">
                   <button 
@@ -2858,6 +2892,9 @@ export default function BudgetSystem() {
               </div>
             </div>
 
+            {/* Calendar Content - Scrollable */}
+            <div className="flex-1 min-h-0 overflow-auto">
+
             {/* Week View */}
             {calendarView === 'week' && (
               <div className="bg-white rounded-xl border border-neutral-200 overflow-hidden">
@@ -2883,63 +2920,100 @@ export default function BudgetSystem() {
                 </div>
                 
                 {/* Time Grid */}
-                <div className="max-h-[400px] sm:max-h-[500px] overflow-auto">
-                  {calendarHours.map(hour => (
-                    <div key={hour} className="grid grid-cols-8 border-b border-neutral-100">
-                      <div className="p-1 sm:p-2 text-right text-[10px] sm:text-xs text-neutral-400 pr-1 sm:pr-3 border-r border-neutral-100">
-                        {String(hour).padStart(2, '0')}:00
-                      </div>
-                      {getCalendarWeekDays().map((day, dayIndex) => {
-                        const dayTasks = getTasksForDate(day).filter(t => parseInt(t.time.split(':')[0]) === hour);
-                        return (
-                          <div 
-                            key={dayIndex}
-                            onClick={(e) => { if (e.target === e.currentTarget) handleCellClick(day, hour); }}
-                            onDragOver={handleTaskDragOver}
-                            onDrop={(e) => handleTaskDrop(e, day, hour)}
-                            className={`min-h-[60px] border-r border-neutral-100 last:border-0 relative cursor-pointer hover:bg-blue-50/50 ${isTodayCal(day) ? 'bg-blue-50/30' : ''} ${draggedTask ? 'hover:bg-blue-100' : ''}`}
-                          >
-                            {dayTasks.map(task => {
-                              const startMinute = parseInt(task.time.split(':')[1]) || 0;
-                              const TypeIcon = TASK_TYPES[task.type]?.icon || User;
-                              const taskHeight = Math.max(((task.duration || 60) / 60) * 60 - 4, 24);
-                              return (
-                                <div
-                                  key={task.id}
-                                  draggable={!resizingTask}
-                                  onDragStart={(e) => handleTaskDragStart(e, task)}
-                                  onDragEnd={() => setDraggedTask(null)}
-                                  onClick={(e) => { e.stopPropagation(); setEditingTask(task); }}
-                                  className={`absolute left-1 right-1 px-2 py-1 rounded-lg ${TASK_COLORS[task.color]?.bg || 'bg-blue-500'} text-white text-xs cursor-grab active:cursor-grabbing hover:opacity-95 transition-opacity shadow-sm group ${draggedTask?.id === task.id ? 'opacity-50' : ''} ${resizingTask?.id === task.id ? 'ring-2 ring-white cursor-ns-resize' : ''}`}
-                                  style={{
-                                    top: `${(startMinute / 60) * 60 + 2}px`,
-                                    height: `${taskHeight}px`,
-                                  }}
-                                >
-                                  <div className="flex items-center gap-1 overflow-hidden">
-                                    <TypeIcon size={10} className="flex-shrink-0" />
-                                    <span className="font-medium truncate">{task.title}</span>
-                                  </div>
-                                  {(task.duration || 60) >= 45 && (
-                                    <div className="text-white/80 text-[10px] mt-0.5">
-                                      {task.time} - {task.endTime}
-                                    </div>
-                                  )}
-                                  {/* Resize handle */}
-                                  <div
-                                    onMouseDown={(e) => handleResizeStart(e, task)}
-                                    className="absolute bottom-0 left-0 right-0 h-2 cursor-ns-resize hover:bg-white/30 rounded-b-lg opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center"
-                                  >
-                                    <div className="w-8 h-1 bg-white/50 rounded-full" />
-                                  </div>
-                                </div>
-                              );
-                            })}
+                <div ref={calendarGridRef} className="flex-1 overflow-auto" style={{ height: 'calc(100vh - 280px)', minHeight: '400px' }}>
+                  <div className="relative">
+                    {calendarHours.map(hour => {
+                      const isCurrentHour = currentTime.getHours() === hour;
+                      const currentMinuteOffset = currentTime.getMinutes() / 60 * 60;
+                      
+                      return (
+                        <div key={hour} className="grid grid-cols-8 border-b border-neutral-100 relative">
+                          <div className="p-1 sm:p-2 text-right text-[10px] sm:text-xs text-neutral-400 pr-1 sm:pr-3 border-r border-neutral-100 h-[60px] flex items-start justify-end">
+                            {String(hour).padStart(2, '0')}:00
                           </div>
-                        );
-                      })}
-                    </div>
-                  ))}
+                          {getCalendarWeekDays().map((day, dayIndex) => {
+                            const dayTasks = getTasksForDate(day).filter(t => parseInt(t.time.split(':')[0]) === hour);
+                            const showTimeLine = isTodayCal(day) && isCurrentHour;
+                            
+                            return (
+                              <div 
+                                key={dayIndex}
+                                onClick={(e) => { 
+                                  if (e.target === e.currentTarget) {
+                                    const rect = e.currentTarget.getBoundingClientRect();
+                                    const relativeY = e.clientY - rect.top;
+                                    const minutes = Math.round(relativeY / 60 * 60 / 15) * 15;
+                                    handleCellClick(day, hour + minutes / 60); 
+                                  }
+                                }}
+                                onDragOver={handleTaskDragOver}
+                                onDrop={(e) => {
+                                  const rect = e.currentTarget.getBoundingClientRect();
+                                  const relativeY = e.clientY - rect.top;
+                                  handleTaskDrop(e, day, hour, relativeY);
+                                }}
+                                className={`h-[60px] border-r border-neutral-100 last:border-0 relative cursor-pointer hover:bg-blue-50/50 ${isTodayCal(day) ? 'bg-blue-50/30' : ''} ${draggedTask ? 'hover:bg-blue-100' : ''}`}
+                              >
+                                {/* Current time line */}
+                                {showTimeLine && (
+                                  <div 
+                                    className="absolute left-0 right-0 h-0.5 bg-red-500 z-20 pointer-events-none"
+                                    style={{ top: `${currentMinuteOffset}px` }}
+                                  >
+                                    <div className="absolute -left-1 -top-1 w-2 h-2 bg-red-500 rounded-full" />
+                                  </div>
+                                )}
+                                
+                                {/* 15-min grid lines */}
+                                <div className="absolute inset-0 pointer-events-none">
+                                  <div className="absolute left-0 right-0 top-[15px] border-t border-neutral-100/50" />
+                                  <div className="absolute left-0 right-0 top-[30px] border-t border-neutral-200/50" />
+                                  <div className="absolute left-0 right-0 top-[45px] border-t border-neutral-100/50" />
+                                </div>
+                                
+                                {dayTasks.map(task => {
+                                  const startMinute = parseInt(task.time.split(':')[1]) || 0;
+                                  const TypeIcon = TASK_TYPES[task.type]?.icon || User;
+                                  const taskHeight = Math.max(((task.duration || 60) / 60) * 60 - 2, 20);
+                                  return (
+                                    <div
+                                      key={task.id}
+                                      draggable={!resizingTask}
+                                      onDragStart={(e) => handleTaskDragStart(e, task)}
+                                      onDragEnd={() => setDraggedTask(null)}
+                                      onClick={(e) => { e.stopPropagation(); setEditingTask(task); }}
+                                      className={`absolute left-0.5 right-0.5 px-1.5 py-0.5 rounded ${TASK_COLORS[task.color]?.bg || 'bg-blue-500'} text-white text-[11px] cursor-grab active:cursor-grabbing hover:opacity-95 transition-opacity shadow-sm group z-10 ${draggedTask?.id === task.id ? 'opacity-50' : ''} ${resizingTask?.id === task.id ? 'ring-2 ring-white cursor-ns-resize' : ''}`}
+                                      style={{
+                                        top: `${(startMinute / 60) * 60 + 1}px`,
+                                        height: `${taskHeight}px`,
+                                      }}
+                                    >
+                                      <div className="flex items-center gap-1 overflow-hidden">
+                                        <TypeIcon size={10} className="flex-shrink-0" />
+                                        <span className="font-medium truncate">{task.title}</span>
+                                      </div>
+                                      {(task.duration || 60) >= 30 && (
+                                        <div className="text-white/80 text-[9px]">
+                                          {task.time} - {task.endTime}
+                                        </div>
+                                      )}
+                                      {/* Resize handle */}
+                                      <div
+                                        onMouseDown={(e) => handleResizeStart(e, task)}
+                                        className="absolute bottom-0 left-0 right-0 h-2 cursor-ns-resize hover:bg-white/30 rounded-b opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center"
+                                      >
+                                        <div className="w-8 h-1 bg-white/50 rounded-full" />
+                                      </div>
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      );
+                    })}
+                  </div>
                 </div>
               </div>
             )}
@@ -3054,8 +3128,8 @@ export default function BudgetSystem() {
 
             {/* Day View */}
             {calendarView === 'day' && (
-              <div className="bg-white rounded-xl border border-neutral-200 overflow-hidden">
-                <div className="p-4 border-b border-neutral-200 bg-neutral-50 flex items-center justify-between">
+              <div className="bg-white rounded-xl border border-neutral-200 overflow-hidden flex flex-col" style={{ height: 'calc(100vh - 220px)', minHeight: '500px' }}>
+                <div className="p-4 border-b border-neutral-200 bg-neutral-50 flex items-center justify-between flex-shrink-0">
                   <div>
                     <h2 className="text-lg font-semibold text-neutral-800">
                       {DAYS_FULL[(calendarDate.getDay() + 6) % 7]}, {calendarDate.getDate()} {MONTHS[calendarDate.getMonth()]}
@@ -3072,7 +3146,7 @@ export default function BudgetSystem() {
                 
                 {/* Financial events at top of day */}
                 {getFinancialEventsForDate(calendarDate).length > 0 && (
-                  <div className="p-3 border-b border-neutral-200 bg-gradient-to-r from-neutral-50 to-white">
+                  <div className="p-3 border-b border-neutral-200 bg-gradient-to-r from-neutral-50 to-white flex-shrink-0">
                     <div className="text-xs font-semibold text-neutral-500 mb-2">💰 Платежи на этот день</div>
                     <div className="flex flex-wrap gap-2">
                       {getFinancialEventsForDate(calendarDate).map(event => (
@@ -3098,31 +3172,55 @@ export default function BudgetSystem() {
                   </div>
                 )}
                 
-                <div className="max-h-[500px] overflow-auto">
+                <div ref={calendarGridRef} className="flex-1 overflow-auto">
                   {calendarHours.map(hour => {
                     const hourTasks = getTasksForDate(calendarDate).filter(t => parseInt(t.time.split(':')[0]) === hour);
+                    const isCurrentHour = isTodayCal(calendarDate) && currentTime.getHours() === hour;
+                    const currentMinuteOffset = currentTime.getMinutes() / 60 * 100;
+                    
                     return (
-                      <div key={hour} className="flex border-b border-neutral-100">
+                      <div key={hour} className="flex border-b border-neutral-100 relative min-h-[60px]">
                         <div className="w-16 p-3 text-right text-sm text-neutral-400 border-r border-neutral-100 flex-shrink-0">
                           {String(hour).padStart(2, '0')}:00
                         </div>
-                        <div className="flex-1 min-h-[60px] p-2">
+                        <div 
+                          className="flex-1 p-2 cursor-pointer hover:bg-blue-50/30 relative"
+                          onClick={(e) => {
+                            if (e.target === e.currentTarget) {
+                              const rect = e.currentTarget.getBoundingClientRect();
+                              const relativeY = e.clientY - rect.top;
+                              const minutes = Math.round(relativeY / rect.height * 60 / 15) * 15;
+                              handleCellClick(calendarDate, hour + minutes / 60);
+                            }
+                          }}
+                        >
+                          {/* Current time line */}
+                          {isCurrentHour && (
+                            <div 
+                              className="absolute left-0 right-0 h-0.5 bg-red-500 z-20 pointer-events-none"
+                              style={{ top: `${currentMinuteOffset}%` }}
+                            >
+                              <div className="absolute -left-1 -top-1 w-2 h-2 bg-red-500 rounded-full" />
+                            </div>
+                          )}
+                          
                           {hourTasks.map(task => {
-                            const TypeIcon = TASK_TYPES[task.type].icon;
+                            const TypeIcon = TASK_TYPES[task.type]?.icon || User;
                             return (
                               <div
                                 key={task.id}
-                                className={`${TASK_COLORS[task.color].light} border-l-4 ${TASK_COLORS[task.color].border} rounded-r-lg p-3 mb-2`}
+                                onClick={(e) => { e.stopPropagation(); setEditingTask(task); }}
+                                className={`${TASK_COLORS[task.color]?.light || 'bg-blue-100'} border-l-4 ${TASK_COLORS[task.color]?.border || 'border-blue-500'} rounded-r-lg p-3 mb-2 cursor-pointer hover:shadow-md transition-shadow`}
                               >
                                 <div className="flex items-center justify-between">
                                   <div className="flex items-center gap-2">
-                                    <TypeIcon size={16} className={TASK_COLORS[task.color].text} />
-                                    <span className={`font-medium ${TASK_COLORS[task.color].text}`}>{task.title}</span>
-                                    <span className={`text-xs px-2 py-0.5 rounded-full ${TASK_TYPES[task.type].color} bg-white`}>
-                                      {TASK_TYPES[task.type].label}
+                                    <TypeIcon size={16} className={TASK_COLORS[task.color]?.text || 'text-blue-600'} />
+                                    <span className={`font-medium ${TASK_COLORS[task.color]?.text || 'text-blue-600'}`}>{task.title}</span>
+                                    <span className={`text-xs px-2 py-0.5 rounded-full ${TASK_TYPES[task.type]?.color || 'text-blue-500'} bg-white`}>
+                                      {TASK_TYPES[task.type]?.label || 'Задача'}
                                     </span>
                                   </div>
-                                  <button onClick={() => removeCalendarTask(task.id)} className="p-1 hover:bg-white/50 rounded">
+                                  <button onClick={(e) => { e.stopPropagation(); removeCalendarTask(task.id); }} className="p-1 hover:bg-white/50 rounded">
                                     <Trash2 size={14} className="text-neutral-400" />
                                   </button>
                                 </div>
@@ -3140,7 +3238,8 @@ export default function BudgetSystem() {
                 </div>
               </div>
             )}
-          </>
+            </div>
+          </div>
         )}
 
         {/* ДНЕВНИК - отдельный таб */}
