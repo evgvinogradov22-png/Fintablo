@@ -1237,20 +1237,20 @@ export default function BudgetSystem() {
     save(newData);
   };
 
-  const handleDragStart = (e, habit) => {
+  const handleHabitDragStart = (e, habit) => {
     setDraggedHabit(habit);
     e.dataTransfer.effectAllowed = 'move';
     e.dataTransfer.setData('text/plain', habit.id);
     e.target.style.opacity = '0.5';
   };
 
-  const handleDragEnd = (e) => {
+  const handleHabitDragEnd = (e) => {
     e.target.style.opacity = '1';
     setDraggedHabit(null);
     setDragOverHabit(null);
   };
 
-  const handleDragOver = (e, habit) => {
+  const handleHabitDragOver = (e, habit) => {
     e.preventDefault();
     e.dataTransfer.dropEffect = 'move';
     if (draggedHabit && habit.id !== draggedHabit.id) {
@@ -1258,7 +1258,7 @@ export default function BudgetSystem() {
     }
   };
 
-  const handleDrop = (e, habit) => {
+  const handleHabitDrop = (e, habit) => {
     e.preventDefault();
     if (draggedHabit && habit.id !== draggedHabit.id) {
       reorderHabits(draggedHabit.id, habit.id);
@@ -2624,10 +2624,10 @@ export default function BudgetSystem() {
                             <tr 
                               key={habit.id} 
                               draggable
-                              onDragStart={(e) => handleDragStart(e, habit)}
-                              onDragEnd={handleDragEnd}
-                              onDragOver={(e) => handleDragOver(e, habit)}
-                              onDrop={(e) => handleDrop(e, habit)}
+                              onDragStart={(e) => handleHabitDragStart(e, habit)}
+                              onDragEnd={handleHabitDragEnd}
+                              onDragOver={(e) => handleHabitDragOver(e, habit)}
+                              onDrop={(e) => handleHabitDrop(e, habit)}
                               className={`border-b last:border-0 group/row hover:bg-neutral-50 cursor-grab active:cursor-grabbing transition-all ${
                                 dragOverHabit === habit.id ? 'bg-blue-50 border-t-2 border-t-blue-400' : ''
                               }`}
