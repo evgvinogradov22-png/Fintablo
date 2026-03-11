@@ -1837,7 +1837,7 @@ export default function BudgetSystem() {
         )}
 
         {/* Main Content */}
-        <main className={`flex-1 ${mainTab === 'calendar' ? 'sm:overflow-hidden sm:flex sm:flex-col' : 'max-w-4xl mx-auto'} px-4 py-4 sm:py-6 sm:px-4`}>
+        <main className={`flex-1 ${mainTab === 'calendar' ? 'sm:h-[calc(100vh-56px)] sm:overflow-hidden sm:flex sm:flex-col' : 'max-w-4xl mx-auto'} px-4 py-4 sm:py-6 sm:px-4`}>
         {/* ФИНАНСЫ */}
         {mainTab === 'finance' && (
           <>
@@ -2870,7 +2870,7 @@ export default function BudgetSystem() {
 
         {/* КАЛЕНДАРЬ */}
         {mainTab === 'calendar' && (
-          <div className="flex flex-col h-full">
+          <div className="flex flex-col h-full sm:h-[calc(100vh-120px)]">
             {/* Calendar Header - Fixed at top */}
             <div className="bg-white rounded-xl border border-neutral-200 p-3 mb-3 flex-shrink-0">
               <div className="flex items-center justify-between flex-wrap gap-3">
