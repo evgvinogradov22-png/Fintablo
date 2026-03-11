@@ -3,7 +3,7 @@ import { Check, ChevronLeft, ChevronRight, Plus, Trash2, Users, ArrowDownLeft, A
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine } from 'recharts';
 import storage from './storage';
 
-const STORAGE_KEY = 'budget-system-v10';
+const STORAGE_KEY = 'budget-system-v9';
 const AUTH_KEY = 'budget-auth';
 const PASSWORD = '1122';
 const MONTHS_SHORT = ['янв', 'фев', 'мар', 'апр', 'май', 'июн', 'июл', 'авг', 'сен', 'окт', 'ноя', 'дек'];
@@ -618,6 +618,10 @@ export default function BudgetSystem() {
   const fmtDateCal = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
   const isTodayCal = (date) => fmtDateCal(date) === fmtDateCal(today);
   const isSelectedCal = (date) => fmtDateCal(date) === fmtDateCal(calendarDate);
+  const [draggedTask, setDraggedTask] = useState(null);
+  const [showAddProject, setShowAddProject] = useState(false);
+  const [newProject, setNewProject] = useState({ name: '', color: 'blue', parentId: null });
+  const [editingTask, setEditingTask] = useState(null);
   
   const getCalendarMonthDays = () => {
     const year = calendarDate.getFullYear();
@@ -666,7 +670,7 @@ export default function BudgetSystem() {
         tasks = tasks.filter(t => t.project === selectedProject);
       }
     }
-    return tasks;
+    return tasks.sort((a, b) => a.time.localeCompare(b.time));
   };
   
   const toggleCalendarProject = (projectId) => {
@@ -681,6 +685,7 @@ export default function BudgetSystem() {
     if (!newTask.title.trim()) return;
     const newData = { ...data };
     if (!newData.calendarTasks) newData.calendarTasks = [];
+    if (!newData.calendarProjects) newData.calendarProjects = [];
     newData.calendarTasks.push({
       ...newTask,
       id: Date.now(),
@@ -690,8 +695,101 @@ export default function BudgetSystem() {
     setShowAddTask(false);
   };
   
+  const updateCalendarTask = (taskId, updates) => {
+    const newData = { ...data };
+    newData.calendarTasks = (newData.calendarTasks || []).map(t => 
+      t.id === taskId ? { ...t, ...updates } : t
+    );
+    save(newData);
+  };
+  
   const removeCalendarTask = (taskId) => {
     const newData = { ...data, calendarTasks: (data.calendarTasks || []).filter(t => t.id !== taskId) };
+    save(newData);
+  };
+  
+  // Drag & Drop для задач
+  const handleTaskDragStart = (e, task) => {
+    setDraggedTask(task);
+    e.dataTransfer.effectAllowed = 'move';
+  };
+  
+  const handleTaskDragOver = (e) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+  };
+  
+  const handleTaskDrop = (e, newDate, newHour = null) => {
+    e.preventDefault();
+    if (!draggedTask) return;
+    
+    const updates = { date: fmtDateCal(newDate) };
+    if (newHour !== null) {
+      updates.time = `${String(newHour).padStart(2, '0')}:00`;
+      const duration = draggedTask.duration || 60;
+      const endHour = newHour + Math.floor(duration / 60);
+      const endMin = duration % 60;
+      updates.endTime = `${String(endHour).padStart(2, '0')}:${String(endMin).padStart(2, '0')}`;
+    }
+    
+    updateCalendarTask(draggedTask.id, updates);
+    setDraggedTask(null);
+  };
+  
+  // Управление проектами
+  const addCalendarProject = () => {
+    if (!newProject.name.trim()) return;
+    const newData = { ...data };
+    if (!newData.calendarProjects) newData.calendarProjects = [];
+    
+    const projectId = newProject.name.toLowerCase().replace(/\s+/g, '-') + '-' + Date.now();
+    
+    if (newProject.parentId) {
+      // Добавляем как подпроект
+      newData.calendarProjects = newData.calendarProjects.map(p => {
+        if (p.id === newProject.parentId) {
+          return {
+            ...p,
+            subprojects: [...(p.subprojects || []), { id: projectId, name: newProject.name, color: newProject.color }]
+          };
+        }
+        return p;
+      });
+    } else {
+      // Добавляем как основной проект
+      newData.calendarProjects.push({
+        id: projectId,
+        name: newProject.name,
+        color: newProject.color,
+        subprojects: []
+      });
+    }
+    
+    save(newData);
+    setNewProject({ name: '', color: 'blue', parentId: null });
+    setShowAddProject(false);
+  };
+  
+  const removeCalendarProject = (projectId, parentId = null) => {
+    const newData = { ...data };
+    
+    if (parentId) {
+      // Удаляем подпроект
+      newData.calendarProjects = newData.calendarProjects.map(p => {
+        if (p.id === parentId) {
+          return { ...p, subprojects: (p.subprojects || []).filter(s => s.id !== projectId) };
+        }
+        return p;
+      });
+    } else {
+      // Удаляем основной проект
+      newData.calendarProjects = newData.calendarProjects.filter(p => p.id !== projectId);
+    }
+    
+    // Удаляем задачи этого проекта
+    newData.calendarTasks = (newData.calendarTasks || []).filter(t => t.project !== projectId);
+    
+    if (selectedProject === projectId) setSelectedProject('all');
     save(newData);
   };
   
@@ -1396,7 +1494,7 @@ export default function BudgetSystem() {
             <div className="flex-1 overflow-auto p-3">
               <div className="flex items-center justify-between mb-2">
                 <span className="text-xs font-semibold text-neutral-400 uppercase tracking-wide">Проекты</span>
-                <button className="p-1 hover:bg-neutral-100 rounded text-neutral-400 hover:text-neutral-600">
+                <button onClick={() => { setNewProject({ name: '', color: 'blue', parentId: null }); setShowAddProject(true); }} className="p-1 hover:bg-neutral-100 rounded text-neutral-400 hover:text-neutral-600">
                   <Plus size={14} />
                 </button>
               </div>
@@ -1416,49 +1514,71 @@ export default function BudgetSystem() {
               {/* Project List */}
               <div className="space-y-1">
                 {(data?.calendarProjects || []).map(project => (
-                  <div key={project.id}>
-                    <button
-                      onClick={() => {
-                        if (project.subprojects?.length > 0) {
-                          toggleCalendarProject(project.id);
-                        }
-                        setSelectedProject(project.id);
-                      }}
-                      className={`w-full flex items-center gap-2 px-2 py-2 rounded-lg text-sm transition-colors ${
-                        selectedProject === project.id ? 'bg-blue-50 text-blue-600' : 'text-neutral-600 hover:bg-neutral-50'
-                      }`}
-                    >
-                      {project.subprojects?.length > 0 && (
-                        <ChevronDown 
-                          size={14} 
-                          className={`text-neutral-400 transition-transform ${expandedProjects.includes(project.id) ? '' : '-rotate-90'}`}
-                        />
-                      )}
-                      {!project.subprojects?.length && <div className="w-3.5" />}
-                      <div className={`w-3 h-3 rounded-full ${TASK_COLORS[project.color]?.dot || 'bg-neutral-400'}`} />
-                      <span className="font-medium">{project.name}</span>
-                      <span className="ml-auto text-xs text-neutral-400">
+                  <div key={project.id} className="group/proj">
+                    <div className={`flex items-center gap-2 px-2 py-2 rounded-lg text-sm transition-colors ${
+                      selectedProject === project.id ? 'bg-blue-50 text-blue-600' : 'text-neutral-600 hover:bg-neutral-50'
+                    }`}>
+                      <button
+                        onClick={() => {
+                          if (project.subprojects?.length > 0) {
+                            toggleCalendarProject(project.id);
+                          }
+                          setSelectedProject(project.id);
+                        }}
+                        className="flex items-center gap-2 flex-1 min-w-0"
+                      >
+                        {project.subprojects?.length > 0 && (
+                          <ChevronDown 
+                            size={14} 
+                            className={`text-neutral-400 transition-transform flex-shrink-0 ${expandedProjects.includes(project.id) ? '' : '-rotate-90'}`}
+                          />
+                        )}
+                        {!project.subprojects?.length && <div className="w-3.5 flex-shrink-0" />}
+                        <div className={`w-3 h-3 rounded-full flex-shrink-0 ${TASK_COLORS[project.color]?.dot || 'bg-neutral-400'}`} />
+                        <span className="font-medium truncate">{project.name}</span>
+                      </button>
+                      <span className="text-xs text-neutral-400 flex-shrink-0">
                         {(data?.calendarTasks || []).filter(t => t.project === project.id || project.subprojects?.some(sp => sp.id === t.project)).length}
                       </span>
-                    </button>
+                      <button 
+                        onClick={(e) => { e.stopPropagation(); setNewProject({ name: '', color: 'blue', parentId: project.id }); setShowAddProject(true); }}
+                        className="p-1 hover:bg-blue-100 rounded opacity-0 group-hover/proj:opacity-100 flex-shrink-0"
+                        title="Добавить подпроект"
+                      >
+                        <Plus size={12} className="text-blue-500" />
+                      </button>
+                      <button 
+                        onClick={(e) => { e.stopPropagation(); if(confirm(`Удалить проект "${project.name}" и все его задачи?`)) removeCalendarProject(project.id); }}
+                        className="p-1 hover:bg-red-100 rounded opacity-0 group-hover/proj:opacity-100 flex-shrink-0"
+                      >
+                        <Trash2 size={12} className="text-red-400" />
+                      </button>
+                    </div>
                     
                     {/* Subprojects */}
                     {expandedProjects.includes(project.id) && project.subprojects?.length > 0 && (
                       <div className="ml-5 mt-1 space-y-1">
                         {project.subprojects.map(sub => (
-                          <button
+                          <div
                             key={sub.id}
-                            onClick={() => setSelectedProject(sub.id)}
-                            className={`w-full flex items-center gap-2 px-2 py-1.5 rounded-lg text-sm transition-colors ${
+                            className={`group/sub flex items-center gap-2 px-2 py-1.5 rounded-lg text-sm transition-colors ${
                               selectedProject === sub.id ? 'bg-blue-50 text-blue-600' : 'text-neutral-500 hover:bg-neutral-50'
                             }`}
                           >
-                            <Hash size={12} className="text-neutral-400" />
-                            <span>{sub.name}</span>
-                            <span className="ml-auto text-xs text-neutral-400">
+                            <button onClick={() => setSelectedProject(sub.id)} className="flex items-center gap-2 flex-1 min-w-0">
+                              <Hash size={12} className="text-neutral-400 flex-shrink-0" />
+                              <span className="truncate">{sub.name}</span>
+                            </button>
+                            <span className="text-xs text-neutral-400 flex-shrink-0">
                               {(data?.calendarTasks || []).filter(t => t.project === sub.id).length}
                             </span>
-                          </button>
+                            <button 
+                              onClick={(e) => { e.stopPropagation(); if(confirm(`Удалить "${sub.name}"?`)) removeCalendarProject(sub.id, project.id); }}
+                              className="p-1 hover:bg-red-100 rounded opacity-0 group-hover/sub:opacity-100 flex-shrink-0"
+                            >
+                              <Trash2 size={12} className="text-red-400" />
+                            </button>
+                          </div>
                         ))}
                       </div>
                     )}
@@ -1469,7 +1589,7 @@ export default function BudgetSystem() {
             
             {/* Add Project Button */}
             <div className="p-3 border-t border-neutral-100">
-              <button className="w-full flex items-center justify-center gap-2 px-3 py-2 text-sm text-neutral-500 hover:text-neutral-700 hover:bg-neutral-50 rounded-lg transition-colors">
+              <button onClick={() => { setNewProject({ name: '', color: 'blue', parentId: null }); setShowAddProject(true); }} className="w-full flex items-center justify-center gap-2 px-3 py-2 text-sm text-neutral-500 hover:text-neutral-700 hover:bg-neutral-50 rounded-lg transition-colors">
                 <Plus size={16} />
                 Новый проект
               </button>
@@ -2575,7 +2695,9 @@ export default function BudgetSystem() {
                     <div 
                       key={i} 
                       onClick={() => { setCalendarDate(day); setCalendarView('day'); }}
-                      className={`p-3 text-center border-r border-neutral-100 last:border-0 cursor-pointer hover:bg-neutral-50 ${isTodayCal(day) ? 'bg-blue-50' : ''}`}
+                      onDragOver={handleTaskDragOver}
+                      onDrop={(e) => handleTaskDrop(e, day)}
+                      className={`p-3 text-center border-r border-neutral-100 last:border-0 cursor-pointer hover:bg-neutral-50 ${isTodayCal(day) ? 'bg-blue-50' : ''} ${draggedTask ? 'ring-2 ring-inset ring-blue-200' : ''}`}
                     >
                       <div className="text-xs text-neutral-400 mb-1">{DAYS_SHORT[i]}</div>
                       <div className={`w-8 h-8 mx-auto flex items-center justify-center rounded-full text-lg font-semibold ${
@@ -2598,8 +2720,10 @@ export default function BudgetSystem() {
                         const dayTasks = getTasksForDate(day).filter(t => parseInt(t.time.split(':')[0]) === hour);
                         return (
                           <div 
-                            key={dayIndex} 
-                            className={`min-h-[60px] border-r border-neutral-100 last:border-0 relative ${isTodayCal(day) ? 'bg-blue-50/30' : ''}`}
+                            key={dayIndex}
+                            onDragOver={handleTaskDragOver}
+                            onDrop={(e) => handleTaskDrop(e, day, hour)}
+                            className={`min-h-[60px] border-r border-neutral-100 last:border-0 relative ${isTodayCal(day) ? 'bg-blue-50/30' : ''} ${draggedTask ? 'hover:bg-blue-50' : ''}`}
                           >
                             {dayTasks.map(task => {
                               const startMinute = parseInt(task.time.split(':')[1]);
@@ -2607,7 +2731,11 @@ export default function BudgetSystem() {
                               return (
                                 <div
                                   key={task.id}
-                                  className={`absolute left-1 right-1 px-2 py-1 rounded-lg ${TASK_COLORS[task.color].bg} text-white text-xs cursor-pointer hover:opacity-90 transition-opacity shadow-sm`}
+                                  draggable
+                                  onDragStart={(e) => handleTaskDragStart(e, task)}
+                                  onDragEnd={() => setDraggedTask(null)}
+                                  onClick={() => setEditingTask(task)}
+                                  className={`absolute left-1 right-1 px-2 py-1 rounded-lg ${TASK_COLORS[task.color]?.bg || 'bg-blue-500'} text-white text-xs cursor-grab active:cursor-grabbing hover:opacity-90 transition-opacity shadow-sm ${draggedTask?.id === task.id ? 'opacity-50' : ''}`}
                                   style={{
                                     top: `${(startMinute / 60) * 60 + 2}px`,
                                     height: `${Math.max((task.duration / 60) * 60 - 4, 24)}px`,
@@ -2652,9 +2780,11 @@ export default function BudgetSystem() {
                       <div
                         key={i}
                         onClick={() => { setCalendarDate(day.date); setCalendarView('day'); }}
+                        onDragOver={handleTaskDragOver}
+                        onDrop={(e) => { e.stopPropagation(); handleTaskDrop(e, day.date); }}
                         className={`min-h-[100px] p-2 border-r border-b border-neutral-100 cursor-pointer hover:bg-neutral-50 transition-colors ${
                           !day.isCurrentMonth ? 'bg-neutral-50' : ''
-                        } ${isSelectedCal(day.date) ? 'bg-blue-50' : ''}`}
+                        } ${isSelectedCal(day.date) ? 'bg-blue-50' : ''} ${draggedTask ? 'hover:ring-2 hover:ring-inset hover:ring-blue-300' : ''}`}
                       >
                         <div className={`w-7 h-7 flex items-center justify-center rounded-full text-sm mb-1 ${
                           isTodayCal(day.date) ? 'bg-blue-500 text-white font-bold' :
@@ -2664,11 +2794,15 @@ export default function BudgetSystem() {
                         </div>
                         <div className="space-y-1">
                           {dayTasks.slice(0, 2).map(task => {
-                            const TypeIcon = TASK_TYPES[task.type].icon;
+                            const TypeIcon = TASK_TYPES[task.type]?.icon || User;
                             return (
                               <div
                                 key={task.id}
-                                className={`px-1.5 py-0.5 rounded text-xs ${TASK_COLORS[task.color].light} ${TASK_COLORS[task.color].text} truncate flex items-center gap-1`}
+                                draggable
+                                onDragStart={(e) => { e.stopPropagation(); handleTaskDragStart(e, task); }}
+                                onDragEnd={() => setDraggedTask(null)}
+                                onClick={(e) => { e.stopPropagation(); setEditingTask(task); }}
+                                className={`px-1.5 py-0.5 rounded text-xs ${TASK_COLORS[task.color]?.light || 'bg-blue-100'} ${TASK_COLORS[task.color]?.text || 'text-blue-600'} truncate flex items-center gap-1 cursor-grab active:cursor-grabbing ${draggedTask?.id === task.id ? 'opacity-50' : ''}`}
                               >
                                 <TypeIcon size={10} />
                                 {task.title}
@@ -2856,6 +2990,25 @@ export default function BudgetSystem() {
                 </div>
               </div>
               
+              <div className="mb-4">
+                <label className="text-sm font-medium text-neutral-500 mb-2 block">Проект</label>
+                <select 
+                  value={newTask.project || ''}
+                  onChange={e => setNewTask({ ...newTask, project: e.target.value })}
+                  className="w-full px-4 py-3 bg-neutral-100 rounded-xl focus:outline-none"
+                >
+                  <option value="">Без проекта</option>
+                  {(data?.calendarProjects || []).map(p => (
+                    <optgroup key={p.id} label={p.name}>
+                      <option value={p.id}>{p.name}</option>
+                      {(p.subprojects || []).map(sp => (
+                        <option key={sp.id} value={sp.id}>↳ {sp.name}</option>
+                      ))}
+                    </optgroup>
+                  ))}
+                </select>
+              </div>
+              
               <div className="grid grid-cols-2 gap-4 mb-4">
                 <div>
                   <label className="text-sm font-medium text-neutral-500 mb-2 block">Дата</label>
@@ -2914,6 +3067,164 @@ export default function BudgetSystem() {
                   Создать
                 </button>
               </div>
+            </div>
+          </div>
+        )}
+
+        {/* Edit Task Modal */}
+        {editingTask && (
+          <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
+            <div className="bg-white rounded-2xl w-full max-w-lg p-6">
+              <div className="flex justify-between mb-4">
+                <h2 className="text-lg font-semibold">Редактировать задачу</h2>
+                <button onClick={() => setEditingTask(null)}><X size={20} className="text-neutral-400" /></button>
+              </div>
+              
+              <input 
+                value={editingTask.title}
+                onChange={e => setEditingTask({ ...editingTask, title: e.target.value })}
+                placeholder="Название события" 
+                className="w-full px-4 py-3 bg-neutral-100 rounded-xl text-lg focus:outline-none focus:ring-2 focus:ring-blue-500 mb-4"
+              />
+              
+              <div className="mb-4">
+                <label className="text-sm font-medium text-neutral-500 mb-2 block">Тип задачи</label>
+                <div className="flex gap-2">
+                  <button 
+                    onClick={() => setEditingTask({ ...editingTask, type: 'executor' })}
+                    className={`flex-1 flex items-center justify-center gap-2 px-4 py-3 rounded-xl font-medium transition-all ${
+                      editingTask.type === 'executor' ? 'bg-blue-100 text-blue-600 ring-2 ring-blue-500' : 'bg-neutral-100 text-neutral-600'
+                    }`}
+                  >
+                    <User size={18} /> Исполнитель
+                  </button>
+                  <button 
+                    onClick={() => setEditingTask({ ...editingTask, type: 'control' })}
+                    className={`flex-1 flex items-center justify-center gap-2 px-4 py-3 rounded-xl font-medium transition-all ${
+                      editingTask.type === 'control' ? 'bg-amber-100 text-amber-600 ring-2 ring-amber-500' : 'bg-neutral-100 text-neutral-600'
+                    }`}
+                  >
+                    <Eye size={18} /> Контроль
+                  </button>
+                </div>
+              </div>
+              
+              <div className="mb-4">
+                <label className="text-sm font-medium text-neutral-500 mb-2 block">Проект</label>
+                <select 
+                  value={editingTask.project || ''}
+                  onChange={e => setEditingTask({ ...editingTask, project: e.target.value })}
+                  className="w-full px-4 py-3 bg-neutral-100 rounded-xl focus:outline-none"
+                >
+                  <option value="">Без проекта</option>
+                  {(data?.calendarProjects || []).map(p => (
+                    <optgroup key={p.id} label={p.name}>
+                      <option value={p.id}>{p.name}</option>
+                      {(p.subprojects || []).map(sp => (
+                        <option key={sp.id} value={sp.id}>↳ {sp.name}</option>
+                      ))}
+                    </optgroup>
+                  ))}
+                </select>
+              </div>
+              
+              <div className="grid grid-cols-2 gap-4 mb-4">
+                <div>
+                  <label className="text-sm font-medium text-neutral-500 mb-2 block">Дата</label>
+                  <input 
+                    type="date" 
+                    value={editingTask.date}
+                    onChange={e => setEditingTask({ ...editingTask, date: e.target.value })}
+                    className="w-full px-4 py-3 bg-neutral-100 rounded-xl focus:outline-none"
+                  />
+                </div>
+                <div>
+                  <label className="text-sm font-medium text-neutral-500 mb-2 block">Время</label>
+                  <input 
+                    type="time" 
+                    value={editingTask.time}
+                    onChange={e => setEditingTask({ ...editingTask, time: e.target.value })}
+                    className="w-full px-4 py-3 bg-neutral-100 rounded-xl focus:outline-none"
+                  />
+                </div>
+              </div>
+              
+              {editingTask.type === 'control' && (
+                <div className="mb-4">
+                  <label className="text-sm font-medium text-neutral-500 mb-2 block">Исполнитель</label>
+                  <select 
+                    value={editingTask.assignee || ''}
+                    onChange={e => setEditingTask({ ...editingTask, assignee: e.target.value })}
+                    className="w-full px-4 py-3 bg-neutral-100 rounded-xl focus:outline-none"
+                  >
+                    <option value="">Выберите...</option>
+                    {(data?.employees || []).map(emp => (
+                      <option key={emp.id} value={emp.name}>{emp.name}</option>
+                    ))}
+                  </select>
+                </div>
+              )}
+              
+              <div className="mb-4">
+                <label className="text-sm font-medium text-neutral-500 mb-2 block">Цвет</label>
+                <div className="flex gap-2">
+                  {Object.keys(TASK_COLORS).map(c => (
+                    <button 
+                      key={c}
+                      onClick={() => setEditingTask({ ...editingTask, color: c })}
+                      className={`w-10 h-10 rounded-full ${TASK_COLORS[c].bg} ${editingTask.color === c ? 'ring-2 ring-offset-2 ring-neutral-400' : ''} hover:scale-110 transition-transform`}
+                    />
+                  ))}
+                </div>
+              </div>
+              
+              <div className="flex gap-3">
+                <button 
+                  onClick={() => { removeCalendarTask(editingTask.id); setEditingTask(null); }} 
+                  className="py-3 px-4 rounded-xl font-medium text-red-500 hover:bg-red-50 transition-colors"
+                >
+                  <Trash2 size={18} />
+                </button>
+                <button onClick={() => setEditingTask(null)} className="flex-1 py-3 rounded-xl font-medium text-neutral-600 hover:bg-neutral-100 transition-colors">
+                  Отмена
+                </button>
+                <button 
+                  onClick={() => { updateCalendarTask(editingTask.id, editingTask); setEditingTask(null); }} 
+                  className="flex-1 py-3 bg-blue-500 hover:bg-blue-600 text-white rounded-xl font-medium transition-colors"
+                >
+                  Сохранить
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Add Project Modal */}
+        {showAddProject && (
+          <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
+            <div className="bg-white rounded-2xl w-full max-w-sm p-4">
+              <div className="flex justify-between mb-4">
+                <h2 className="text-lg font-semibold">{newProject.parentId ? 'Новый подпроект' : 'Новый проект'}</h2>
+                <button onClick={() => setShowAddProject(false)}><X size={20} className="text-neutral-400" /></button>
+              </div>
+              <input 
+                value={newProject.name} 
+                onChange={e => setNewProject({ ...newProject, name: e.target.value })} 
+                placeholder="Название" 
+                className="w-full px-3 py-2 rounded-lg border mb-3" 
+                autoFocus 
+              />
+              <div className="text-sm text-neutral-500 mb-2">Цвет</div>
+              <div className="flex gap-2 mb-4">
+                {Object.keys(TASK_COLORS).map(c => (
+                  <button 
+                    key={c} 
+                    onClick={() => setNewProject({ ...newProject, color: c })} 
+                    className={`w-8 h-8 rounded-full ${TASK_COLORS[c].bg} ${newProject.color === c ? 'ring-2 ring-offset-2 ring-neutral-400' : ''}`} 
+                  />
+                ))}
+              </div>
+              <button onClick={addCalendarProject} className="w-full py-2 bg-blue-500 text-white rounded-lg font-medium">Добавить</button>
             </div>
           </div>
         )}
