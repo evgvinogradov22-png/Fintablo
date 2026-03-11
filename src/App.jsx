@@ -217,7 +217,7 @@ export default function BudgetSystem() {
   const [selectedProject, setSelectedProject] = useState('all');
   const [expandedProjects, setExpandedProjects] = useState(['work', 'personal']);
   const [showAddTask, setShowAddTask] = useState(false);
-  const [newTask, setNewTask] = useState({ title: '', date: todayKey, time: '10:00', endTime: '11:00', duration: 60, color: 'blue', type: 'executor', assignee: null, project: '' });
+  const [newTask, setNewTask] = useState({ title: '', description: '', date: todayKey, time: '10:00', endTime: '11:00', duration: 60, color: 'blue', type: 'executor', assignee: null, project: '' });
 
   useEffect(() => { 
     checkAuth();
@@ -631,6 +631,7 @@ export default function BudgetSystem() {
     const dateStr = fmtDateCal(date);
     setNewTask({
       title: '',
+      description: '',
       date: dateStr,
       time: `${String(hour).padStart(2, '0')}:00`,
       endTime: `${String(hour + 1).padStart(2, '0')}:00`,
@@ -852,7 +853,7 @@ export default function BudgetSystem() {
       id: Date.now(),
     });
     save(newData);
-    setNewTask({ title: '', date: todayKey, time: '10:00', endTime: '11:00', duration: 60, color: 'blue', type: 'executor', assignee: null, project: '' });
+    setNewTask({ title: '', description: '', date: todayKey, time: '10:00', endTime: '11:00', duration: 60, color: 'blue', type: 'executor', assignee: null, project: '' });
     setShowAddTask(false);
   };
   
@@ -954,7 +955,9 @@ export default function BudgetSystem() {
     save(newData);
   };
   
-  const calendarHours = Array.from({ length: 14 }, (_, i) => i + 7); // 7:00 - 20:00
+  const [calendarZoom, setCalendarZoom] = useState(1); // 0.5, 0.75, 1, 1.5, 2
+  const calendarHours = Array.from({ length: 24 }, (_, i) => i); // 0:00 - 23:00
+  const hourHeight = 60 * calendarZoom; // базовая высота часа * zoom
 
   // === ПРИВЫЧКИ ===
   const [habitView, setHabitView] = useState('week');
@@ -1552,32 +1555,9 @@ export default function BudgetSystem() {
           )}
           
           {mainTab === 'calendar' && (
-            <>
-              <div className="flex items-center justify-between">
-                <button onClick={() => setCalendarDate(new Date(calendarDate.setDate(calendarDate.getDate() - 7)))} className="w-10 h-10 flex items-center justify-center rounded-full active:bg-neutral-100">
-                  <ChevronLeft size={22} className="text-neutral-600" />
-                </button>
-                <div className="text-center">
-                  <h1 className="text-[17px] font-semibold text-neutral-800">{MONTHS[calendarDate.getMonth()]} {calendarDate.getFullYear()}</h1>
-                </div>
-                <button onClick={() => setCalendarDate(new Date(calendarDate.setDate(calendarDate.getDate() + 7)))} className="w-10 h-10 flex items-center justify-center rounded-full active:bg-neutral-100">
-                  <ChevronRight size={22} className="text-neutral-600" />
-                </button>
-              </div>
-              <div className="flex gap-2 mt-3">
-                {['День', 'Неделя', 'Месяц'].map((v, i) => (
-                  <button 
-                    key={v}
-                    onClick={() => setCalendarView(['day', 'week', 'month'][i])}
-                    className={`px-4 py-2 rounded-full text-sm font-medium transition-all ${
-                      calendarView === ['day', 'week', 'month'][i] ? 'bg-blue-500 text-white' : 'bg-neutral-100 text-neutral-600'
-                    }`}
-                  >
-                    {v}
-                  </button>
-                ))}
-              </div>
-            </>
+            <div className="text-center">
+              <h1 className="text-[17px] font-semibold text-neutral-800">Календарь</h1>
+            </div>
           )}
           
           {mainTab === 'journal' && (
@@ -2823,56 +2803,58 @@ export default function BudgetSystem() {
         {/* КАЛЕНДАРЬ */}
         {mainTab === 'calendar' && (
           <>
-            {/* Calendar Header - Desktop */}
-            <div className="hidden sm:flex items-center justify-between mb-4">
-              <div className="flex items-center gap-4">
-                <button 
-                  onClick={() => setCalendarDate(today)}
-                  className="px-3 py-1.5 text-sm font-medium text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
-                >
-                  Сегодня
-                </button>
-                <div className="flex items-center border border-neutral-200 rounded-lg">
-                  <button onClick={() => setCalendarDate(new Date(calendarDate.getFullYear(), calendarDate.getMonth(), calendarDate.getDate() - (calendarView === 'month' ? 30 : calendarView === 'week' ? 7 : 1)))} className="p-2 hover:bg-neutral-50 rounded-l-lg border-r border-neutral-200">
-                    <ChevronLeft size={16} />
+            {/* Calendar Header - Fixed on all views */}
+            <div className="bg-white sm:bg-transparent rounded-xl sm:rounded-none border sm:border-0 border-neutral-200 p-3 sm:p-0 mb-4 sticky top-0 z-10 sm:relative">
+              <div className="flex items-center justify-between flex-wrap gap-3">
+                <div className="flex items-center gap-2 sm:gap-4">
+                  <button 
+                    onClick={() => setCalendarDate(today)}
+                    className="px-2 sm:px-3 py-1.5 text-sm font-medium text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
+                  >
+                    Сегодня
                   </button>
-                  <span className="px-4 text-sm font-medium min-w-[180px] text-center">
-                    {calendarView === 'month' ? `${MONTHS[calendarDate.getMonth()]} ${calendarDate.getFullYear()}` : 
-                     calendarView === 'week' ? `${getCalendarWeekDays()[0].getDate()} - ${getCalendarWeekDays()[6].getDate()} ${MONTHS[calendarDate.getMonth()]}` :
-                     `${calendarDate.getDate()} ${MONTHS[calendarDate.getMonth()]} ${calendarDate.getFullYear()}`}
-                  </span>
-                  <button onClick={() => setCalendarDate(new Date(calendarDate.getFullYear(), calendarDate.getMonth(), calendarDate.getDate() + (calendarView === 'month' ? 30 : calendarView === 'week' ? 7 : 1)))} className="p-2 hover:bg-neutral-50 rounded-r-lg border-l border-neutral-200">
-                    <ChevronRight size={16} />
-                  </button>
-                </div>
-              </div>
-              
-              <div className="flex items-center gap-3">
-                <div className="flex bg-neutral-100 rounded-lg p-1">
-                  {[
-                    { id: 'day', label: 'День' },
-                    { id: 'week', label: 'Неделя' },
-                    { id: 'month', label: 'Месяц' },
-                  ].map(v => (
-                    <button
-                      key={v.id}
-                      onClick={() => setCalendarView(v.id)}
-                      className={`px-3 py-1.5 text-sm font-medium rounded-md transition-all ${
-                        calendarView === v.id ? 'bg-white shadow text-neutral-800' : 'text-neutral-500 hover:text-neutral-700'
-                      }`}
-                    >
-                      {v.label}
+                  <div className="flex items-center border border-neutral-200 rounded-lg bg-white">
+                    <button onClick={() => setCalendarDate(new Date(calendarDate.getFullYear(), calendarDate.getMonth(), calendarDate.getDate() - (calendarView === 'month' ? 30 : calendarView === 'week' ? 7 : 1)))} className="p-1.5 sm:p-2 hover:bg-neutral-50 rounded-l-lg border-r border-neutral-200">
+                      <ChevronLeft size={16} />
                     </button>
-                  ))}
+                    <span className="px-2 sm:px-4 text-sm font-medium min-w-[120px] sm:min-w-[180px] text-center">
+                      {calendarView === 'month' ? `${MONTHS[calendarDate.getMonth()]} ${calendarDate.getFullYear()}` : 
+                       calendarView === 'week' ? `${getCalendarWeekDays()[0].getDate()} - ${getCalendarWeekDays()[6].getDate()} ${MONTHS[calendarDate.getMonth()].slice(0,3)}` :
+                       `${calendarDate.getDate()} ${MONTHS[calendarDate.getMonth()].slice(0,3)} ${calendarDate.getFullYear()}`}
+                    </span>
+                    <button onClick={() => setCalendarDate(new Date(calendarDate.getFullYear(), calendarDate.getMonth(), calendarDate.getDate() + (calendarView === 'month' ? 30 : calendarView === 'week' ? 7 : 1)))} className="p-1.5 sm:p-2 hover:bg-neutral-50 rounded-r-lg border-l border-neutral-200">
+                      <ChevronRight size={16} />
+                    </button>
+                  </div>
                 </div>
                 
-                <button 
-                  onClick={() => setShowAddTask(true)}
-                  className="flex items-center gap-2 px-4 py-2 bg-blue-500 hover:bg-blue-600 text-white rounded-lg font-medium transition-colors"
-                >
-                  <Plus size={18} />
-                  Добавить
-                </button>
+                <div className="flex items-center gap-2 sm:gap-3">
+                  <div className="flex bg-neutral-100 rounded-lg p-0.5 sm:p-1">
+                    {[
+                      { id: 'day', label: 'День' },
+                      { id: 'week', label: 'Неделя' },
+                      { id: 'month', label: 'Месяц' },
+                    ].map(v => (
+                      <button
+                        key={v.id}
+                        onClick={() => setCalendarView(v.id)}
+                        className={`px-2 sm:px-3 py-1 sm:py-1.5 text-xs sm:text-sm font-medium rounded-md transition-all ${
+                          calendarView === v.id ? 'bg-white shadow text-neutral-800' : 'text-neutral-500 hover:text-neutral-700'
+                        }`}
+                      >
+                        {v.label}
+                      </button>
+                    ))}
+                  </div>
+                  
+                  <button 
+                    onClick={() => setShowAddTask(true)}
+                    className="flex items-center gap-1 sm:gap-2 px-3 sm:px-4 py-1.5 sm:py-2 bg-blue-500 hover:bg-blue-600 text-white rounded-lg font-medium transition-colors text-sm"
+                  >
+                    <Plus size={16} />
+                    <span className="hidden sm:inline">Добавить</span>
+                  </button>
+                </div>
               </div>
             </div>
 
@@ -2881,17 +2863,17 @@ export default function BudgetSystem() {
               <div className="bg-white rounded-xl border border-neutral-200 overflow-hidden">
                 {/* Week Header */}
                 <div className="grid grid-cols-8 border-b border-neutral-200">
-                  <div className="p-3 text-center text-xs text-neutral-400 border-r border-neutral-100"></div>
+                  <div className="p-2 sm:p-3 text-center text-xs text-neutral-400 border-r border-neutral-100"></div>
                   {getCalendarWeekDays().map((day, i) => (
                     <div 
                       key={i} 
                       onClick={() => { setCalendarDate(day); setCalendarView('day'); }}
                       onDragOver={handleTaskDragOver}
                       onDrop={(e) => handleTaskDrop(e, day)}
-                      className={`p-3 text-center border-r border-neutral-100 last:border-0 cursor-pointer hover:bg-neutral-50 ${isTodayCal(day) ? 'bg-blue-50' : ''} ${draggedTask ? 'ring-2 ring-inset ring-blue-200' : ''}`}
+                      className={`p-2 sm:p-3 text-center border-r border-neutral-100 last:border-0 cursor-pointer hover:bg-neutral-50 ${isTodayCal(day) ? 'bg-blue-50' : ''} ${draggedTask ? 'ring-2 ring-inset ring-blue-200' : ''}`}
                     >
-                      <div className="text-xs text-neutral-400 mb-1">{DAYS_SHORT[i]}</div>
-                      <div className={`w-8 h-8 mx-auto flex items-center justify-center rounded-full text-lg font-semibold ${
+                      <div className="text-[10px] sm:text-xs text-neutral-400 mb-1">{DAYS_SHORT[i]}</div>
+                      <div className={`w-6 h-6 sm:w-8 sm:h-8 mx-auto flex items-center justify-center rounded-full text-sm sm:text-lg font-semibold ${
                         isTodayCal(day) ? 'bg-blue-500 text-white' : 'text-neutral-800'
                       }`}>
                         {day.getDate()}
@@ -2901,10 +2883,10 @@ export default function BudgetSystem() {
                 </div>
                 
                 {/* Time Grid */}
-                <div className="max-h-[500px] overflow-auto">
+                <div className="max-h-[400px] sm:max-h-[500px] overflow-auto">
                   {calendarHours.map(hour => (
                     <div key={hour} className="grid grid-cols-8 border-b border-neutral-100">
-                      <div className="p-2 text-right text-xs text-neutral-400 pr-3 border-r border-neutral-100">
+                      <div className="p-1 sm:p-2 text-right text-[10px] sm:text-xs text-neutral-400 pr-1 sm:pr-3 border-r border-neutral-100">
                         {String(hour).padStart(2, '0')}:00
                       </div>
                       {getCalendarWeekDays().map((day, dayIndex) => {
@@ -3243,8 +3225,15 @@ export default function BudgetSystem() {
                 value={newTask.title}
                 onChange={e => setNewTask({ ...newTask, title: e.target.value })}
                 placeholder="Название события" 
-                className="w-full px-4 py-3 bg-neutral-100 rounded-xl text-lg focus:outline-none focus:ring-2 focus:ring-blue-500 mb-4"
+                className="w-full px-4 py-3 bg-neutral-100 rounded-xl text-lg focus:outline-none focus:ring-2 focus:ring-blue-500 mb-3"
                 autoFocus
+              />
+              
+              <textarea
+                value={newTask.description || ''}
+                onChange={e => setNewTask({ ...newTask, description: e.target.value })}
+                placeholder="Описание (опционально)"
+                className="w-full px-4 py-3 bg-neutral-100 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 mb-4 h-20 resize-none text-sm"
               />
               
               <div className="mb-4">
@@ -3353,7 +3342,7 @@ export default function BudgetSystem() {
         {/* Edit Task Modal */}
         {editingTask && (
           <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
-            <div className="bg-white rounded-2xl w-full max-w-lg p-6">
+            <div className="bg-white rounded-2xl w-full max-w-lg p-6 max-h-[90vh] overflow-y-auto">
               <div className="flex justify-between mb-4">
                 <h2 className="text-lg font-semibold">Редактировать задачу</h2>
                 <button onClick={() => setEditingTask(null)}><X size={20} className="text-neutral-400" /></button>
@@ -3363,7 +3352,14 @@ export default function BudgetSystem() {
                 value={editingTask.title}
                 onChange={e => setEditingTask({ ...editingTask, title: e.target.value })}
                 placeholder="Название события" 
-                className="w-full px-4 py-3 bg-neutral-100 rounded-xl text-lg focus:outline-none focus:ring-2 focus:ring-blue-500 mb-4"
+                className="w-full px-4 py-3 bg-neutral-100 rounded-xl text-lg focus:outline-none focus:ring-2 focus:ring-blue-500 mb-3"
+              />
+              
+              <textarea
+                value={editingTask.description || ''}
+                onChange={e => setEditingTask({ ...editingTask, description: e.target.value })}
+                placeholder="Описание (опционально)"
+                className="w-full px-4 py-3 bg-neutral-100 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 mb-4 h-20 resize-none text-sm"
               />
               
               <div className="mb-4">
