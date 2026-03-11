@@ -905,10 +905,6 @@ export default function BudgetSystem() {
     setDragData({ type, data });
     e.dataTransfer.effectAllowed = 'move';
     e.dataTransfer.setData('text/plain', JSON.stringify({ type, data }));
-    // Add drag image
-    if (e.target) {
-      e.dataTransfer.setDragImage(e.target, 0, 0);
-    }
   };
   
   const handleDragOver = (e, date, hour = null, cellElement = null) => {
@@ -3109,7 +3105,7 @@ export default function BudgetSystem() {
                                       onDragEnd={handleDragEnd}
                                       onClick={(e) => { e.stopPropagation(); setEditingTask(task); }}
                                       className={`absolute left-0.5 right-0.5 px-1.5 py-0.5 rounded ${TASK_COLORS[task.color]?.bg || 'bg-blue-500'} text-white text-[11px] cursor-grab active:cursor-grabbing hover:brightness-110 transition-all shadow-sm group z-10 select-none ${
-                                        isDragging ? 'opacity-40 scale-95' : ''
+                                        isDragging ? 'opacity-50' : ''
                                       } ${
                                         resizingTask?.id === task.id ? 'ring-2 ring-white cursor-ns-resize' : ''
                                       }`}
