@@ -896,42 +896,140 @@ export default function BudgetSystem() {
     save(newData);
   };
   
-  // Drag & Drop для задач
-  const handleTaskDragStart = (e, task) => {
-    setDraggedTask(task);
+  // === DRAG & DROP SYSTEM ===
+  const [dragData, setDragData] = useState(null); // { type: 'task' | 'payment', data: ... }
+  const [dropTarget, setDropTarget] = useState(null); // { date, hour, minute }
+  
+  const handleDragStart = (e, type, data) => {
+    e.stopPropagation();
+    setDragData({ type, data });
     e.dataTransfer.effectAllowed = 'move';
+    e.dataTransfer.setData('text/plain', JSON.stringify({ type, data }));
+    // Add drag image
+    if (e.target) {
+      e.dataTransfer.setDragImage(e.target, 0, 0);
+    }
   };
   
-  const handleTaskDragOver = (e) => {
+  const handleDragOver = (e, date, hour = null, cellElement = null) => {
     e.preventDefault();
+    e.stopPropagation();
     e.dataTransfer.dropEffect = 'move';
-  };
-  
-  const handleTaskDrop = (e, newDate, newHour = null, dropY = null) => {
-    e.preventDefault();
-    if (!draggedTask) return;
     
-    const updates = { date: fmtDateCal(newDate) };
-    if (newHour !== null) {
-      // Calculate minutes based on drop position (15-min increments)
-      let minutes = 0;
-      if (dropY !== null) {
-        const cellHeight = 60; // Each hour cell is 60px
-        const relativeY = dropY % cellHeight;
-        minutes = Math.round(relativeY / cellHeight * 60 / 15) * 15; // Snap to 15 min
-        if (minutes >= 60) minutes = 45;
-      }
-      
-      updates.time = `${String(newHour).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`;
-      const duration = draggedTask.duration || 60;
-      const totalMinutes = newHour * 60 + minutes + duration;
-      const endHour = Math.floor(totalMinutes / 60);
-      const endMin = totalMinutes % 60;
-      updates.endTime = `${String(endHour).padStart(2, '0')}:${String(endMin).padStart(2, '0')}`;
+    let minute = 0;
+    if (hour !== null && cellElement) {
+      const rect = cellElement.getBoundingClientRect();
+      const relativeY = e.clientY - rect.top;
+      const cellHeight = rect.height;
+      minute = Math.floor(relativeY / cellHeight * 60 / 15) * 15;
+      if (minute >= 60) minute = 45;
+      if (minute < 0) minute = 0;
     }
     
-    updateCalendarTask(draggedTask.id, updates);
-    setDraggedTask(null);
+    setDropTarget({ date: fmtDateCal(date), hour, minute });
+  };
+  
+  const handleDragLeave = (e) => {
+    e.preventDefault();
+    // Only clear if leaving the calendar entirely
+    if (!e.relatedTarget || !e.currentTarget.contains(e.relatedTarget)) {
+      setDropTarget(null);
+    }
+  };
+  
+  const handleDrop = (e, date, hour = null, cellElement = null) => {
+    e.preventDefault();
+    e.stopPropagation();
+    
+    if (!dragData) {
+      // Try to get from dataTransfer
+      try {
+        const jsonData = e.dataTransfer.getData('text/plain');
+        if (jsonData) {
+          const parsed = JSON.parse(jsonData);
+          setDragData(parsed);
+        }
+      } catch (err) {}
+    }
+    
+    if (!dragData) {
+      setDropTarget(null);
+      return;
+    }
+    
+    const dateStr = fmtDateCal(date);
+    
+    // Calculate drop minute from position
+    let minute = 0;
+    if (hour !== null && cellElement) {
+      const rect = cellElement.getBoundingClientRect();
+      const relativeY = e.clientY - rect.top;
+      const cellHeight = rect.height;
+      minute = Math.floor(relativeY / cellHeight * 60 / 15) * 15;
+      if (minute >= 60) minute = 45;
+      if (minute < 0) minute = 0;
+    }
+    
+    if (dragData.type === 'task') {
+      // Move existing task
+      const task = dragData.data;
+      const updates = { date: dateStr };
+      
+      if (hour !== null) {
+        updates.time = `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`;
+        const duration = task.duration || 60;
+        const totalMinutes = hour * 60 + minute + duration;
+        const endHour = Math.floor(totalMinutes / 60);
+        const endMin = totalMinutes % 60;
+        updates.endTime = `${String(endHour).padStart(2, '0')}:${String(endMin).padStart(2, '0')}`;
+      }
+      
+      updateCalendarTask(task.id, updates);
+    } else if (dragData.type === 'payment') {
+      // Create task from payment
+      const payment = dragData.data;
+      const newData = { ...data };
+      if (!newData.calendarTasks) newData.calendarTasks = [];
+      
+      const time = hour !== null 
+        ? `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`
+        : '10:00';
+      const startHour = hour || 10;
+      const endHour = startHour + 1;
+      
+      newData.calendarTasks.push({
+        id: Date.now(),
+        title: `💰 ${payment.name || payment.type}`,
+        description: `Сумма: ${payment.amount?.toLocaleString() || payment.monthlyPayment?.toLocaleString()}₽`,
+        date: dateStr,
+        time,
+        endTime: `${String(endHour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`,
+        duration: 60,
+        color: payment.type === 'credit' ? 'rose' : payment.type === 'recurring' ? 'amber' : payment.type === 'salary' ? 'violet' : 'red',
+        type: 'executor',
+        assignee: null,
+        project: '',
+        paymentData: payment
+      });
+      
+      save(newData);
+    }
+    
+    setDragData(null);
+    setDropTarget(null);
+  };
+  
+  const handleDragEnd = () => {
+    setDragData(null);
+    setDropTarget(null);
+  };
+  
+  // Legacy handlers for compatibility
+  const handleTaskDragStart = (e, task) => handleDragStart(e, 'task', task);
+  const handleTaskDragOver = (e) => e.preventDefault();
+  const handleTaskDrop = (e, newDate, newHour = null) => {
+    const cellElement = e.currentTarget;
+    handleDrop(e, newDate, newHour, cellElement);
   };
   
   // Управление проектами
@@ -1633,10 +1731,10 @@ export default function BudgetSystem() {
       <div className="flex flex-1 pb-20 sm:pb-0">
         {/* Calendar Sidebar - Desktop only */}
         {mainTab === 'calendar' && (
-          <aside className="hidden sm:flex w-64 bg-white border-r border-neutral-200 flex-col flex-shrink-0 h-[calc(100vh-56px)] sticky top-14">
+          <aside className="hidden sm:flex w-56 bg-white border-r border-neutral-200 flex-col flex-shrink-0 h-[calc(100vh-56px)] sticky top-14">
             {/* Mini Calendar */}
-            <div className="p-4 border-b border-neutral-100">
-              <div className="flex items-center justify-between mb-3">
+            <div className="p-3 border-b border-neutral-100">
+              <div className="flex items-center justify-between mb-2">
                 <span className="text-sm font-semibold text-neutral-800">{MONTHS[calendarDate.getMonth()]} {calendarDate.getFullYear()}</span>
                 <div className="flex gap-1">
                   <button onClick={() => setCalendarDate(new Date(calendarDate.getFullYear(), calendarDate.getMonth() - 1, 1))} className="p-1 hover:bg-neutral-100 rounded text-neutral-400 hover:text-neutral-600">
@@ -1647,15 +1745,15 @@ export default function BudgetSystem() {
                   </button>
                 </div>
               </div>
-              <div className="grid grid-cols-7 gap-1 text-center text-xs">
+              <div className="grid grid-cols-7 gap-0.5 text-center text-xs">
                 {DAYS_SHORT.map(d => (
-                  <div key={d} className="py-1 text-neutral-400 font-medium">{d[0]}</div>
+                  <div key={d} className="py-0.5 text-neutral-400 font-medium text-[10px]">{d[0]}</div>
                 ))}
                 {getCalendarMonthDays().slice(0, 35).map((day, i) => (
                   <button
                     key={i}
                     onClick={() => setCalendarDate(day.date)}
-                    className={`py-1 rounded text-xs transition-colors ${
+                    className={`py-0.5 rounded text-[10px] transition-colors ${
                       isTodayCal(day.date) ? 'bg-blue-500 text-white font-bold' :
                       isSelectedCal(day.date) ? 'bg-blue-100 text-blue-600 font-medium' :
                       day.isCurrentMonth ? 'text-neutral-700 hover:bg-neutral-100' : 'text-neutral-300'
@@ -1667,18 +1765,18 @@ export default function BudgetSystem() {
               </div>
             </div>
             
-            {/* Projects */}
+            {/* Projects & Filters */}
             <div className="flex-1 overflow-auto p-3">
               {/* All Tasks */}
               <button
                 onClick={() => setSelectedProject('all')}
-                className={`w-full flex items-center gap-2 px-2 py-2 rounded-lg text-sm transition-colors mb-2 ${
+                className={`w-full flex items-center gap-2 px-2 py-1.5 rounded-lg text-sm transition-colors mb-2 ${
                   selectedProject === 'all' ? 'bg-blue-50 text-blue-600' : 'text-neutral-600 hover:bg-neutral-50'
                 }`}
               >
-                <Calendar size={16} />
-                <span className="font-medium">Все события</span>
-                <span className="ml-auto text-xs text-neutral-400">{(data?.calendarTasks || []).length}</span>
+                <Calendar size={14} />
+                <span className="font-medium text-xs">Все события</span>
+                <span className="ml-auto text-[10px] text-neutral-400">{(data?.calendarTasks || []).length}</span>
               </button>
               
               {/* Projects Section */}
@@ -1694,7 +1792,7 @@ export default function BudgetSystem() {
                     <button
                       key={project.id}
                       onClick={() => setSelectedProject(project.id)}
-                      className={`w-full flex items-center gap-2 px-2 py-1.5 rounded text-xs transition-colors ${
+                      className={`w-full flex items-center gap-2 px-2 py-1 rounded text-xs transition-colors ${
                         selectedProject === project.id ? 'bg-blue-50 text-blue-600' : 'text-neutral-600 hover:bg-neutral-50'
                       }`}
                     >
@@ -1708,143 +1806,20 @@ export default function BudgetSystem() {
                 </div>
               </div>
               
-              {/* Habits Section */}
-              <div className="mb-3 pt-2 border-t border-neutral-100">
-                <div className="flex items-center gap-1 mb-1">
-                  <Target size={12} className="text-neutral-400" />
-                  <span className="text-[10px] font-semibold text-neutral-400 uppercase tracking-wide">Привычки на сегодня</span>
-                </div>
-                <div className="space-y-1">
-                  {(data?.habits || []).filter(h => !h.archived).slice(0, 5).map(habit => {
-                    const group = (data?.habitGroups || []).find(g => g.id === habit.groupId);
-                    const isDone = isHabitCompleted(habit.id, today);
-                    return (
-                      <div
-                        key={habit.id}
-                        onClick={() => toggleHabit(habit.id, today)}
-                        className={`flex items-center gap-2 px-2 py-1.5 rounded text-xs cursor-pointer transition-colors ${
-                          isDone ? 'bg-emerald-50 text-emerald-600' : 'text-neutral-600 hover:bg-neutral-50'
-                        }`}
-                      >
-                        <div className={`w-4 h-4 rounded border-2 flex items-center justify-center transition-all ${
-                          isDone 
-                            ? `${HABIT_COLORS[group?.color]?.fill || 'bg-emerald-500'} border-transparent` 
-                            : `border-neutral-300 hover:border-neutral-400`
-                        }`}>
-                          {isDone && <Check size={10} className="text-white" />}
-                        </div>
-                        <span className={`truncate ${isDone ? 'line-through opacity-60' : ''}`}>{habit.name}</span>
-                      </div>
-                    );
-                  })}
-                  {(data?.habits || []).filter(h => !h.archived).length > 5 && (
-                    <div className="text-[10px] text-neutral-400 px-2">+{(data?.habits || []).filter(h => !h.archived).length - 5} ещё</div>
-                  )}
-                </div>
-              </div>
-              
-              {/* Financial Events - Draggable */}
+              {/* Toggle payments visibility */}
               <div className="pt-2 border-t border-neutral-100">
-                <div className="flex items-center justify-between mb-1">
-                  <div className="flex items-center gap-1">
-                    <span className="text-[10px] font-semibold text-neutral-400 uppercase tracking-wide">Платежи</span>
-                  </div>
-                  <button
-                    onClick={() => setShowFinancialEvents(!showFinancialEvents)}
-                    className={`w-6 h-3 rounded-full transition-colors ${showFinancialEvents ? 'bg-emerald-500' : 'bg-neutral-300'}`}
-                  >
+                <button
+                  onClick={() => setShowFinancialEvents(!showFinancialEvents)}
+                  className={`w-full flex items-center gap-2 px-2 py-1.5 rounded text-xs transition-colors ${
+                    showFinancialEvents ? 'bg-emerald-50 text-emerald-600' : 'text-neutral-500 hover:bg-neutral-50'
+                  }`}
+                >
+                  <span>💰</span>
+                  <span>Показать платежи</span>
+                  <div className={`ml-auto w-6 h-3 rounded-full transition-colors ${showFinancialEvents ? 'bg-emerald-500' : 'bg-neutral-300'}`}>
                     <div className={`w-2 h-2 bg-white rounded-full shadow transition-transform mt-0.5 ${showFinancialEvents ? 'translate-x-3.5 ml-0.5' : 'ml-0.5'}`} />
-                  </button>
-                </div>
-                {showFinancialEvents && (
-                  <div className="space-y-1 max-h-48 overflow-auto">
-                    {/* Credits */}
-                    {(data?.credits || []).filter(c => !isCreditPaid(c.id)).map(credit => (
-                      <div
-                        key={`credit-${credit.id}`}
-                        draggable
-                        onDragStart={(e) => {
-                          e.dataTransfer.setData('payment', JSON.stringify({ type: 'credit', ...credit }));
-                        }}
-                        className="flex items-center gap-2 px-2 py-1.5 rounded text-xs bg-rose-50 text-rose-700 cursor-grab active:cursor-grabbing hover:bg-rose-100 transition-colors"
-                      >
-                        <span>💳</span>
-                        <span className="truncate flex-1">{credit.name}</span>
-                        <span className="text-[10px] font-medium">{credit.day}ч</span>
-                      </div>
-                    ))}
-                    {/* Recurring */}
-                    {recurringExpenses.filter(e => !isRecurringPaid(e.id)).map(expense => (
-                      <div
-                        key={`recurring-${expense.id}`}
-                        draggable
-                        onDragStart={(e) => {
-                          e.dataTransfer.setData('payment', JSON.stringify({ type: 'recurring', ...expense }));
-                        }}
-                        className="flex items-center gap-2 px-2 py-1.5 rounded text-xs bg-amber-50 text-amber-700 cursor-grab active:cursor-grabbing hover:bg-amber-100 transition-colors"
-                      >
-                        <span>🔄</span>
-                        <span className="truncate flex-1">{expense.name}</span>
-                        <span className="text-[10px] font-medium">{expense.day}ч</span>
-                      </div>
-                    ))}
-                    {/* Salaries */}
-                    {(() => {
-                      const salaryData = data?.salaries?.[selectedMonth] || {};
-                      const totalPay1 = Object.values(salaryData).reduce((s, e) => s + (Number(e.pay1) || 0), 0);
-                      const totalPay2 = Object.values(salaryData).reduce((s, e) => s + (Number(e.pay2) || 0), 0);
-                      const items = [];
-                      if (totalPay1 > 0) {
-                        items.push(
-                          <div
-                            key="fot-1"
-                            draggable
-                            onDragStart={(e) => {
-                              e.dataTransfer.setData('payment', JSON.stringify({ type: 'salary', payNum: 1, amount: totalPay1, day: data.fotSettings.payDay1 }));
-                            }}
-                            className="flex items-center gap-2 px-2 py-1.5 rounded text-xs bg-violet-50 text-violet-700 cursor-grab active:cursor-grabbing hover:bg-violet-100 transition-colors"
-                          >
-                            <span>👥</span>
-                            <span className="truncate flex-1">ФОТ (аванс)</span>
-                            <span className="text-[10px] font-medium">{data.fotSettings.payDay1}ч</span>
-                          </div>
-                        );
-                      }
-                      if (totalPay2 > 0) {
-                        items.push(
-                          <div
-                            key="fot-2"
-                            draggable
-                            onDragStart={(e) => {
-                              e.dataTransfer.setData('payment', JSON.stringify({ type: 'salary', payNum: 2, amount: totalPay2, day: data.fotSettings.payDay2 }));
-                            }}
-                            className="flex items-center gap-2 px-2 py-1.5 rounded text-xs bg-violet-50 text-violet-700 cursor-grab active:cursor-grabbing hover:bg-violet-100 transition-colors"
-                          >
-                            <span>👥</span>
-                            <span className="truncate flex-1">ФОТ (зп)</span>
-                            <span className="text-[10px] font-medium">{data.fotSettings.payDay2}ч</span>
-                          </div>
-                        );
-                      }
-                      return items;
-                    })()}
-                    {/* Debts */}
-                    {(md.debts || []).map(debt => (
-                      <div
-                        key={`debt-${debt.id}`}
-                        draggable
-                        onDragStart={(e) => {
-                          e.dataTransfer.setData('payment', JSON.stringify({ type: 'debt', ...debt }));
-                        }}
-                        className="flex items-center gap-2 px-2 py-1.5 rounded text-xs bg-red-50 text-red-700 cursor-grab active:cursor-grabbing hover:bg-red-100 transition-colors"
-                      >
-                        <span>📋</span>
-                        <span className="truncate flex-1">{debt.name}</span>
-                        <span className="text-[10px] font-medium">{debt.day}ч</span>
-                      </div>
-                    ))}
                   </div>
-                )}
+                </button>
               </div>
             </div>
             
@@ -2957,30 +2932,46 @@ export default function BudgetSystem() {
                 {/* Week Header - Fixed */}
                 <div className="grid grid-cols-8 border-b border-neutral-200 flex-shrink-0">
                   <div className="p-2 sm:p-3 text-center text-xs text-neutral-400 border-r border-neutral-100"></div>
+                  {getCalendarWeekDays().map((day, i) => (
+                    <div 
+                      key={i} 
+                      onClick={() => { setCalendarDate(day); setCalendarView('day'); }}
+                      onDragOver={handleTaskDragOver}
+                      onDrop={(e) => handleTaskDrop(e, day)}
+                      className={`p-2 sm:p-3 text-center border-r border-neutral-100 last:border-0 cursor-pointer hover:bg-neutral-50 ${isTodayCal(day) ? 'bg-blue-50' : ''} ${draggedTask ? 'ring-2 ring-inset ring-blue-200' : ''}`}
+                    >
+                      <div className="text-[10px] sm:text-xs text-neutral-400 mb-1">{DAYS_SHORT[i]}</div>
+                      <div className={`w-6 h-6 sm:w-8 sm:h-8 mx-auto flex items-center justify-center rounded-full text-sm sm:text-lg font-semibold ${
+                        isTodayCal(day) ? 'bg-blue-500 text-white' : 'text-neutral-800'
+                      }`}>
+                        {day.getDate()}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+                
+                {/* Habits Row */}
+                <div className="grid grid-cols-8 border-b border-neutral-200 bg-gradient-to-r from-emerald-50 to-white flex-shrink-0">
+                  <div className="p-1 sm:p-2 text-right text-[10px] text-neutral-500 border-r border-neutral-100 flex items-center justify-end font-medium">
+                    <Target size={12} className="mr-1" />
+                    Привычки
+                  </div>
                   {getCalendarWeekDays().map((day, i) => {
-                    const financialEvents = showFinancialEvents ? getFinancialEventsForDate(day) : [];
+                    const dateKey = fmtDateCal(day);
+                    const activeHabits = (data?.habits || []).filter(h => !h.archived);
+                    const completedCount = activeHabits.filter(h => (data?.habitCompletions?.[dateKey] || []).includes(h.id)).length;
+                    const totalCount = activeHabits.length;
+                    const allDone = totalCount > 0 && completedCount === totalCount;
+                    
                     return (
                       <div 
                         key={i} 
-                        onClick={() => { setCalendarDate(day); setCalendarView('day'); }}
-                        onDragOver={handleTaskDragOver}
-                        onDrop={(e) => handleTaskDrop(e, day)}
-                        className={`p-2 sm:p-3 text-center border-r border-neutral-100 last:border-0 cursor-pointer hover:bg-neutral-50 ${isTodayCal(day) ? 'bg-blue-50' : ''} ${draggedTask ? 'ring-2 ring-inset ring-blue-200' : ''}`}
+                        onClick={() => { setMainTab('habits'); }}
+                        className={`p-1 border-r border-neutral-100 last:border-0 min-h-[32px] cursor-pointer hover:bg-emerald-50 ${allDone ? 'bg-emerald-100' : ''}`}
                       >
-                        <div className="text-[10px] sm:text-xs text-neutral-400 mb-1">{DAYS_SHORT[i]}</div>
-                        <div className={`w-6 h-6 sm:w-8 sm:h-8 mx-auto flex items-center justify-center rounded-full text-sm sm:text-lg font-semibold ${
-                          isTodayCal(day) ? 'bg-blue-500 text-white' : 'text-neutral-800'
-                        }`}>
-                          {day.getDate()}
-                        </div>
-                        {/* Financial indicators */}
-                        {financialEvents.length > 0 && (
-                          <div className="flex justify-center gap-0.5 mt-1">
-                            {financialEvents.some(e => e.type === 'income') && <div className="w-1.5 h-1.5 rounded-full bg-emerald-500" title="Приход" />}
-                            {financialEvents.some(e => e.type === 'credit') && <div className="w-1.5 h-1.5 rounded-full bg-rose-500" title="Кредит" />}
-                            {financialEvents.some(e => e.type === 'recurring') && <div className="w-1.5 h-1.5 rounded-full bg-amber-500" title="Пост. расход" />}
-                            {financialEvents.some(e => e.type === 'salary') && <div className="w-1.5 h-1.5 rounded-full bg-violet-500" title="ФОТ" />}
-                            {financialEvents.some(e => e.type === 'debt') && <div className="w-1.5 h-1.5 rounded-full bg-red-500" title="Долг" />}
+                        {totalCount > 0 && (
+                          <div className={`text-[10px] text-center font-medium ${allDone ? 'text-emerald-600' : completedCount > 0 ? 'text-emerald-500' : 'text-neutral-400'}`}>
+                            {allDone ? '✓' : `${completedCount}/${totalCount}`}
                           </div>
                         )}
                       </div>
@@ -2990,36 +2981,46 @@ export default function BudgetSystem() {
                 
                 {/* Financial Events Row */}
                 {showFinancialEvents && (
-                  <div className="grid grid-cols-8 border-b border-neutral-200 bg-gradient-to-r from-neutral-50 to-white flex-shrink-0">
-                    <div className="p-1 sm:p-2 text-right text-[10px] sm:text-xs text-neutral-400 border-r border-neutral-100 flex items-center justify-end">
-                      💰
+                  <div className="grid grid-cols-8 border-b border-neutral-200 bg-gradient-to-r from-rose-50 to-white flex-shrink-0">
+                    <div className="p-1 sm:p-2 text-right text-[10px] text-neutral-500 border-r border-neutral-100 flex items-center justify-end font-medium">
+                      💰 Платежи
                     </div>
                     {getCalendarWeekDays().map((day, i) => {
                       const events = getFinancialEventsForDate(day);
+                      const unpaidCount = events.filter(e => !e.isPaid).length;
+                      const totalAmount = events.filter(e => !e.isPaid).reduce((s, e) => s + (e.amount || 0), 0);
+                      
                       return (
-                        <div key={i} className="p-1 border-r border-neutral-100 last:border-0 min-h-[36px]">
-                          <div className="flex flex-wrap gap-0.5">
-                            {events.slice(0, 3).map(event => (
-                              <div
-                                key={event.id}
-                                className={`text-[9px] px-1 py-0.5 rounded truncate max-w-full ${
-                                  event.isPaid ? 'opacity-40 line-through' : ''
-                                } ${
-                                  event.type === 'income' ? 'bg-emerald-100 text-emerald-700' :
-                                  event.type === 'credit' ? 'bg-rose-100 text-rose-700' :
-                                  event.type === 'recurring' ? 'bg-amber-100 text-amber-700' :
-                                  event.type === 'salary' ? 'bg-violet-100 text-violet-700' :
-                                  'bg-red-100 text-red-700'
-                                }`}
-                                title={`${event.title}: ${event.amount?.toLocaleString()}₽`}
-                              >
-                                {event.icon}
-                              </div>
-                            ))}
-                            {events.length > 3 && (
-                              <div className="text-[9px] text-neutral-400">+{events.length - 3}</div>
-                            )}
-                          </div>
+                        <div 
+                          key={i} 
+                          onDragOver={handleTaskDragOver}
+                          onDrop={(e) => handleTaskDrop(e, day)}
+                          className={`p-1 border-r border-neutral-100 last:border-0 min-h-[32px] ${unpaidCount > 0 ? 'bg-rose-50/50' : ''}`}
+                        >
+                          {events.length > 0 && (
+                            <div className="space-y-0.5">
+                              {events.slice(0, 2).map(event => (
+                                <div
+                                  key={event.id}
+                                  className={`text-[9px] px-1 py-0.5 rounded truncate ${
+                                    event.isPaid ? 'opacity-40 line-through' : ''
+                                  } ${
+                                    event.type === 'income' ? 'bg-emerald-100 text-emerald-700' :
+                                    event.type === 'credit' ? 'bg-rose-100 text-rose-700' :
+                                    event.type === 'recurring' ? 'bg-amber-100 text-amber-700' :
+                                    event.type === 'salary' ? 'bg-violet-100 text-violet-700' :
+                                    'bg-red-100 text-red-700'
+                                  }`}
+                                  title={`${event.title}: ${event.amount?.toLocaleString()}₽`}
+                                >
+                                  {event.icon} {event.title?.slice(0, 8)}
+                                </div>
+                              ))}
+                              {events.length > 2 && (
+                                <div className="text-[9px] text-neutral-400 px-1">+{events.length - 2}</div>
+                              )}
+                            </div>
+                          )}
                         </div>
                       );
                     })}
@@ -3041,26 +3042,42 @@ export default function BudgetSystem() {
                           {getCalendarWeekDays().map((day, dayIndex) => {
                             const dayTasks = getTasksForDate(day).filter(t => parseInt(t.time.split(':')[0]) === hour);
                             const showTimeLine = isTodayCal(day) && isCurrentHour;
+                            const isDropTarget = dropTarget && dropTarget.date === fmtDateCal(day) && dropTarget.hour === hour;
                             
                             return (
                               <div 
                                 key={dayIndex}
+                                data-hour={hour}
+                                data-date={fmtDateCal(day)}
                                 onClick={(e) => { 
                                   if (e.target === e.currentTarget) {
                                     const rect = e.currentTarget.getBoundingClientRect();
                                     const relativeY = e.clientY - rect.top;
-                                    const minutes = Math.round(relativeY / 60 * 60 / 15) * 15;
+                                    const minutes = Math.floor(relativeY / rect.height * 60 / 15) * 15;
                                     handleCellClick(day, hour + minutes / 60); 
                                   }
                                 }}
-                                onDragOver={handleTaskDragOver}
-                                onDrop={(e) => {
-                                  const rect = e.currentTarget.getBoundingClientRect();
-                                  const relativeY = e.clientY - rect.top;
-                                  handleTaskDrop(e, day, hour, relativeY);
-                                }}
-                                className={`h-[60px] border-r border-neutral-100 last:border-0 relative cursor-pointer hover:bg-blue-50/50 ${isTodayCal(day) ? 'bg-blue-50/30' : ''} ${draggedTask ? 'hover:bg-blue-100' : ''}`}
+                                onDragOver={(e) => handleDragOver(e, day, hour, e.currentTarget)}
+                                onDragLeave={handleDragLeave}
+                                onDrop={(e) => handleDrop(e, day, hour, e.currentTarget)}
+                                className={`h-[60px] border-r border-neutral-100 last:border-0 relative cursor-pointer transition-colors ${
+                                  isTodayCal(day) ? 'bg-blue-50/30' : ''
+                                } ${
+                                  isDropTarget ? 'bg-blue-100 ring-2 ring-inset ring-blue-400' : 'hover:bg-blue-50/50'
+                                } ${
+                                  dragData ? 'hover:bg-blue-100' : ''
+                                }`}
                               >
+                                {/* Drop indicator line */}
+                                {isDropTarget && dropTarget.minute !== undefined && (
+                                  <div 
+                                    className="absolute left-0 right-0 h-0.5 bg-blue-500 z-30 pointer-events-none"
+                                    style={{ top: `${(dropTarget.minute / 60) * 60}px` }}
+                                  >
+                                    <div className="absolute -left-1 -top-1 w-2 h-2 bg-blue-500 rounded-full" />
+                                  </div>
+                                )}
+                                
                                 {/* Current time line */}
                                 {showTimeLine && (
                                   <div 
@@ -3073,23 +3090,29 @@ export default function BudgetSystem() {
                                 
                                 {/* 15-min grid lines */}
                                 <div className="absolute inset-0 pointer-events-none">
-                                  <div className="absolute left-0 right-0 top-[15px] border-t border-neutral-100/50" />
-                                  <div className="absolute left-0 right-0 top-[30px] border-t border-neutral-200/50" />
-                                  <div className="absolute left-0 right-0 top-[45px] border-t border-neutral-100/50" />
+                                  <div className="absolute left-0 right-0 top-[15px] border-t border-dashed border-neutral-200/40" />
+                                  <div className="absolute left-0 right-0 top-[30px] border-t border-dashed border-neutral-300/50" />
+                                  <div className="absolute left-0 right-0 top-[45px] border-t border-dashed border-neutral-200/40" />
                                 </div>
                                 
                                 {dayTasks.map(task => {
-                                  const startMinute = parseInt(task.time.split(':')[1]) || 0;
+                                  const startMinute = parseInt(task.time?.split(':')[1]) || 0;
                                   const TypeIcon = TASK_TYPES[task.type]?.icon || User;
-                                  const taskHeight = Math.max(((task.duration || 60) / 60) * 60 - 2, 20);
+                                  const taskHeight = Math.max(((task.duration || 60) / 60) * 60 - 2, 22);
+                                  const isDragging = dragData?.type === 'task' && dragData?.data?.id === task.id;
+                                  
                                   return (
                                     <div
                                       key={task.id}
-                                      draggable={!resizingTask}
-                                      onDragStart={(e) => handleTaskDragStart(e, task)}
-                                      onDragEnd={() => setDraggedTask(null)}
+                                      draggable
+                                      onDragStart={(e) => handleDragStart(e, 'task', task)}
+                                      onDragEnd={handleDragEnd}
                                       onClick={(e) => { e.stopPropagation(); setEditingTask(task); }}
-                                      className={`absolute left-0.5 right-0.5 px-1.5 py-0.5 rounded ${TASK_COLORS[task.color]?.bg || 'bg-blue-500'} text-white text-[11px] cursor-grab active:cursor-grabbing hover:opacity-95 transition-opacity shadow-sm group z-10 ${draggedTask?.id === task.id ? 'opacity-50' : ''} ${resizingTask?.id === task.id ? 'ring-2 ring-white cursor-ns-resize' : ''}`}
+                                      className={`absolute left-0.5 right-0.5 px-1.5 py-0.5 rounded ${TASK_COLORS[task.color]?.bg || 'bg-blue-500'} text-white text-[11px] cursor-grab active:cursor-grabbing hover:brightness-110 transition-all shadow-sm group z-10 select-none ${
+                                        isDragging ? 'opacity-40 scale-95' : ''
+                                      } ${
+                                        resizingTask?.id === task.id ? 'ring-2 ring-white cursor-ns-resize' : ''
+                                      }`}
                                       style={{
                                         top: `${(startMinute / 60) * 60 + 1}px`,
                                         height: `${taskHeight}px`,
@@ -3107,9 +3130,9 @@ export default function BudgetSystem() {
                                       {/* Resize handle */}
                                       <div
                                         onMouseDown={(e) => handleResizeStart(e, task)}
-                                        className="absolute bottom-0 left-0 right-0 h-2 cursor-ns-resize hover:bg-white/30 rounded-b opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center"
+                                        className="absolute bottom-0 left-0 right-0 h-3 cursor-ns-resize hover:bg-white/30 rounded-b opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center"
                                       >
-                                        <div className="w-8 h-1 bg-white/50 rounded-full" />
+                                        <div className="w-8 h-1 bg-white/60 rounded-full" />
                                       </div>
                                     </div>
                                   );
@@ -3166,7 +3189,7 @@ export default function BudgetSystem() {
                         onDrop={(e) => { e.stopPropagation(); handleTaskDrop(e, day.date); }}
                         className={`min-h-[100px] p-1.5 border-r border-b border-neutral-100 cursor-pointer hover:bg-neutral-50 transition-colors ${
                           !day.isCurrentMonth ? 'bg-neutral-50' : ''
-                        } ${isSelectedCal(day.date) ? 'bg-blue-50' : ''} ${draggedTask ? 'hover:ring-2 hover:ring-inset hover:ring-blue-300' : ''}`}
+                        } ${isSelectedCal(day.date) ? 'bg-blue-50' : ''} ${dragData ? 'hover:ring-2 hover:ring-inset hover:ring-blue-300' : ''}`}
                       >
                         <div className="flex items-center justify-between mb-1">
                           <div className={`day-number w-6 h-6 flex items-center justify-center rounded-full text-xs ${
