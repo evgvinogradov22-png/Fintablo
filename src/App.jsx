@@ -1093,7 +1093,7 @@ export default function BudgetSystem() {
   const [habitView, setHabitView] = useState('week');
   const [showAddHabit, setShowAddHabit] = useState(false);
   const [showAddHabitGroup, setShowAddHabitGroup] = useState(false);
-  const [newHabit, setNewHabit] = useState({ name: '', groupId: null });
+  const [newHabit, setNewHabit] = useState({ name: '', groupId: null, courseDays: null });
   const [newHabitGroup, setNewHabitGroup] = useState({ name: '', color: 'emerald' });
   const [editingGroup, setEditingGroup] = useState(null);
   const [quote, setQuote] = useState('Каждый день — новая возможность стать лучше.');
@@ -1193,9 +1193,16 @@ export default function BudgetSystem() {
     if (!newHabit.name.trim() || !data) return;
     const newData = { ...data };
     if (!newData.habits) newData.habits = [];
-    newData.habits.push({ id: Date.now(), name: newHabit.name, groupId: newHabit.groupId || data.habitGroups?.[0]?.id, createdAt: todayKey, archived: false });
+    newData.habits.push({ 
+      id: Date.now(), 
+      name: newHabit.name, 
+      groupId: newHabit.groupId || data.habitGroups?.[0]?.id, 
+      createdAt: todayKey, 
+      archived: false,
+      courseDays: newHabit.courseDays || null
+    });
     save(newData);
-    setNewHabit({ name: '', groupId: null });
+    setNewHabit({ name: '', groupId: null, courseDays: null });
     setShowAddHabit(false);
   };
 
@@ -2919,12 +2926,12 @@ export default function BudgetSystem() {
               </div>
             </div>
 
-            {/* Calendar Content - Scrollable */}
-            <div className="flex-1 min-h-0 overflow-auto">
+            {/* Calendar Content */}
+            <div className="flex-1 min-h-0 flex flex-col">
 
             {/* Week View */}
             {calendarView === 'week' && (
-              <div className="bg-white rounded-xl border border-neutral-200 overflow-hidden flex flex-col h-full">
+              <div className="bg-white rounded-xl border border-neutral-200 overflow-hidden flex flex-col flex-1 min-h-0">
                 {/* Week Header - Fixed */}
                 <div className="grid grid-cols-8 border-b border-neutral-200 flex-shrink-0">
                   <div className="p-2 sm:p-3 text-center text-xs text-neutral-400 border-r border-neutral-100"></div>
@@ -2954,22 +2961,43 @@ export default function BudgetSystem() {
                   </div>
                   {getCalendarWeekDays().map((day, i) => {
                     const dateKey = fmtDateCal(day);
-                    const activeHabits = (data?.habits || []).filter(h => !h.archived);
-                    const completedCount = activeHabits.filter(h => (data?.habitCompletions?.[dateKey] || []).includes(h.id)).length;
-                    const totalCount = activeHabits.length;
-                    const allDone = totalCount > 0 && completedCount === totalCount;
+                    const activeHabits = (data?.habits || []).filter(h => {
+                      if (h.archived) return false;
+                      // Check if habit has course days and if it's still active
+                      if (h.courseDays && h.createdAt) {
+                        const startDate = new Date(h.createdAt);
+                        const endDate = new Date(startDate);
+                        endDate.setDate(endDate.getDate() + h.courseDays);
+                        if (day > endDate) return false;
+                      }
+                      return true;
+                    });
+                    const completedHabits = activeHabits.filter(h => (data?.habitCompletions?.[dateKey] || []).includes(h.id));
+                    const uncompletedHabits = activeHabits.filter(h => !(data?.habitCompletions?.[dateKey] || []).includes(h.id));
                     
                     return (
                       <div 
                         key={i} 
                         onClick={() => { setMainTab('habits'); }}
-                        className={`p-1 border-r border-neutral-100 last:border-0 min-h-[32px] cursor-pointer hover:bg-emerald-50 ${allDone ? 'bg-emerald-100' : ''}`}
+                        className={`p-0.5 border-r border-neutral-100 last:border-0 min-h-[40px] cursor-pointer hover:bg-emerald-50/50 overflow-hidden`}
                       >
-                        {totalCount > 0 && (
-                          <div className={`text-[10px] text-center font-medium ${allDone ? 'text-emerald-600' : completedCount > 0 ? 'text-emerald-500' : 'text-neutral-400'}`}>
-                            {allDone ? '✓' : `${completedCount}/${totalCount}`}
-                          </div>
-                        )}
+                        <div className="space-y-0.5">
+                          {uncompletedHabits.slice(0, 2).map(habit => {
+                            const group = (data?.habitGroups || []).find(g => g.id === habit.groupId);
+                            return (
+                              <div key={habit.id} className="text-[8px] px-1 py-0.5 bg-neutral-100 text-neutral-600 rounded truncate flex items-center gap-0.5">
+                                <div className={`w-1.5 h-1.5 rounded-full ${HABIT_COLORS[group?.color]?.dot || 'bg-neutral-400'}`} />
+                                {habit.name.slice(0, 10)}
+                              </div>
+                            );
+                          })}
+                          {completedHabits.length > 0 && (
+                            <div className="text-[8px] text-emerald-500 px-1">✓ {completedHabits.length}</div>
+                          )}
+                          {uncompletedHabits.length > 2 && (
+                            <div className="text-[8px] text-neutral-400 px-1">+{uncompletedHabits.length - 2}</div>
+                          )}
+                        </div>
                       </div>
                     );
                   })}
@@ -2983,22 +3011,20 @@ export default function BudgetSystem() {
                     </div>
                     {getCalendarWeekDays().map((day, i) => {
                       const events = getFinancialEventsForDate(day);
-                      const unpaidCount = events.filter(e => !e.isPaid).length;
-                      const totalAmount = events.filter(e => !e.isPaid).reduce((s, e) => s + (e.amount || 0), 0);
                       
                       return (
                         <div 
                           key={i} 
                           onDragOver={handleTaskDragOver}
                           onDrop={(e) => handleTaskDrop(e, day)}
-                          className={`p-1 border-r border-neutral-100 last:border-0 min-h-[32px] ${unpaidCount > 0 ? 'bg-rose-50/50' : ''}`}
+                          className={`p-0.5 border-r border-neutral-100 last:border-0 min-h-[40px] overflow-hidden`}
                         >
                           {events.length > 0 && (
                             <div className="space-y-0.5">
                               {events.slice(0, 2).map(event => (
                                 <div
                                   key={event.id}
-                                  className={`text-[9px] px-1 py-0.5 rounded truncate ${
+                                  className={`text-[8px] px-1 py-0.5 rounded truncate flex items-center justify-between ${
                                     event.isPaid ? 'opacity-40 line-through' : ''
                                   } ${
                                     event.type === 'income' ? 'bg-emerald-100 text-emerald-700' :
@@ -3009,11 +3035,12 @@ export default function BudgetSystem() {
                                   }`}
                                   title={`${event.title}: ${event.amount?.toLocaleString()}₽`}
                                 >
-                                  {event.icon} {event.title?.slice(0, 8)}
+                                  <span className="truncate">{event.icon} {event.title?.slice(0, 6)}</span>
+                                  <span className="font-medium ml-0.5 flex-shrink-0">{event.amount >= 1000 ? Math.round(event.amount/1000) + 'к' : event.amount}</span>
                                 </div>
                               ))}
                               {events.length > 2 && (
-                                <div className="text-[9px] text-neutral-400 px-1">+{events.length - 2}</div>
+                                <div className="text-[8px] text-neutral-400 px-1">+{events.length - 2}</div>
                               )}
                             </div>
                           )}
@@ -3426,6 +3453,31 @@ export default function BudgetSystem() {
             <div className="bg-white rounded-2xl w-full max-w-sm p-4">
               <div className="flex justify-between mb-4"><h2 className="text-lg font-semibold">Новая привычка</h2><button onClick={() => setShowAddHabit(false)}><X size={20} className="text-neutral-400" /></button></div>
               <input value={newHabit.name} onChange={e => setNewHabit({ ...newHabit, name: e.target.value })} placeholder="Название" className="w-full px-3 py-2 rounded-lg border mb-3" autoFocus />
+              
+              <div className="text-sm text-neutral-500 mb-2">Курс (дней)</div>
+              <div className="flex gap-2 mb-3">
+                {[null, 7, 14, 30, 60, 90].map(days => (
+                  <button
+                    key={days || 'forever'}
+                    onClick={() => setNewHabit({ ...newHabit, courseDays: days })}
+                    className={`px-3 py-1.5 rounded-lg text-sm ${
+                      newHabit.courseDays === days 
+                        ? 'bg-blue-500 text-white' 
+                        : 'bg-neutral-100 text-neutral-600 hover:bg-neutral-200'
+                    }`}
+                  >
+                    {days ? `${days}д` : '∞'}
+                  </button>
+                ))}
+                <input
+                  type="number"
+                  value={newHabit.courseDays || ''}
+                  onChange={e => setNewHabit({ ...newHabit, courseDays: e.target.value ? parseInt(e.target.value) : null })}
+                  placeholder="Др."
+                  className="w-16 px-2 py-1.5 rounded-lg border text-sm text-center"
+                />
+              </div>
+              
               <div className="text-sm text-neutral-500 mb-2">Группа</div>
               <div className="flex flex-wrap gap-2 mb-4">
                 {(data.habitGroups || []).map(g => (
