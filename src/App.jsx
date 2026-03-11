@@ -1,14 +1,15 @@
 import React, { useState, useEffect } from 'react';
-import { Check, ChevronLeft, ChevronRight, Plus, Trash2, Users, ArrowDownLeft, ArrowUpRight, CreditCard, TrendingUp, List, Lock, LogOut, Target, BarChart3, Folder, X, Sparkles, Send, BookOpen, Edit3, Save, Archive, RotateCcw, GripVertical } from 'lucide-react';
+import { Check, ChevronLeft, ChevronRight, Plus, Trash2, Users, ArrowDownLeft, ArrowUpRight, CreditCard, TrendingUp, List, Lock, LogOut, Target, BarChart3, Folder, X, Sparkles, Send, BookOpen, Edit3, Save, Archive, RotateCcw, GripVertical, Calendar, Clock, User, Eye, ChevronDown, Hash, MoreHorizontal, Bell, Search, Settings, Filter, Wallet } from 'lucide-react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine } from 'recharts';
 import storage from './storage';
 
-const STORAGE_KEY = 'budget-system-v9';
+const STORAGE_KEY = 'budget-system-v10';
 const AUTH_KEY = 'budget-auth';
 const PASSWORD = '1122';
 const MONTHS_SHORT = ['янв', 'фев', 'мар', 'апр', 'май', 'июн', 'июл', 'авг', 'сен', 'окт', 'ноя', 'дек'];
 const MONTHS = ['Январь', 'Февраль', 'Март', 'Апрель', 'Май', 'Июнь', 'Июль', 'Август', 'Сентябрь', 'Октябрь', 'Ноябрь', 'Декабрь'];
 const DAYS_SHORT = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'];
+const DAYS_FULL = ['Понедельник', 'Вторник', 'Среда', 'Четверг', 'Пятница', 'Суббота', 'Воскресенье'];
 
 const HABIT_COLORS = {
   emerald: { bg: 'bg-emerald-100', text: 'text-emerald-600', fill: 'bg-emerald-500', border: 'border-emerald-300' },
@@ -17,6 +18,20 @@ const HABIT_COLORS = {
   amber: { bg: 'bg-amber-100', text: 'text-amber-600', fill: 'bg-amber-500', border: 'border-amber-300' },
   rose: { bg: 'bg-rose-100', text: 'text-rose-600', fill: 'bg-rose-500', border: 'border-rose-300' },
   cyan: { bg: 'bg-cyan-100', text: 'text-cyan-600', fill: 'bg-cyan-500', border: 'border-cyan-300' },
+};
+
+const TASK_COLORS = {
+  blue: { bg: 'bg-blue-500', light: 'bg-blue-100', text: 'text-blue-600', border: 'border-blue-500', dot: 'bg-blue-500' },
+  red: { bg: 'bg-red-500', light: 'bg-red-100', text: 'text-red-600', border: 'border-red-500', dot: 'bg-red-500' },
+  green: { bg: 'bg-emerald-500', light: 'bg-emerald-100', text: 'text-emerald-600', border: 'border-emerald-500', dot: 'bg-emerald-500' },
+  amber: { bg: 'bg-amber-500', light: 'bg-amber-100', text: 'text-amber-600', border: 'border-amber-500', dot: 'bg-amber-500' },
+  violet: { bg: 'bg-violet-500', light: 'bg-violet-100', text: 'text-violet-600', border: 'border-violet-500', dot: 'bg-violet-500' },
+  rose: { bg: 'bg-rose-500', light: 'bg-rose-100', text: 'text-rose-600', border: 'border-rose-500', dot: 'bg-rose-500' },
+};
+
+const TASK_TYPES = {
+  executor: { icon: User, label: 'Исполнитель', color: 'text-blue-500' },
+  control: { icon: Eye, label: 'Контроль', color: 'text-amber-500' },
 };
 
 // Компонент авторизации
@@ -159,6 +174,25 @@ const defaultData = {
   ],
   habitCompletions: {},
   journal: {},
+  // Календарь - проекты
+  calendarProjects: [
+    { id: 'work', name: 'Работа', color: 'blue', subprojects: [
+      { id: 'clients', name: 'Клиенты', color: 'blue' },
+      { id: 'internal', name: 'Внутренние', color: 'violet' },
+    ]},
+    { id: 'personal', name: 'Личное', color: 'green', subprojects: [
+      { id: 'health', name: 'Здоровье', color: 'green' },
+      { id: 'family', name: 'Семья', color: 'rose' },
+    ]},
+    { id: 'business', name: 'Бизнес', color: 'amber', subprojects: [] },
+  ],
+  // Календарь - задачи
+  calendarTasks: [
+    { id: 1, title: 'Встреча с клиентом', date: '2026-03-11', time: '10:00', endTime: '11:00', duration: 60, color: 'blue', type: 'executor', assignee: null, project: 'clients' },
+    { id: 2, title: 'Проверить отчёт Саши', date: '2026-03-11', time: '14:00', endTime: '14:30', duration: 30, color: 'amber', type: 'control', assignee: 'Саша', project: 'internal' },
+    { id: 3, title: 'Тренировка', date: '2026-03-11', time: '18:00', endTime: '19:30', duration: 90, color: 'green', type: 'executor', assignee: null, project: 'health' },
+    { id: 4, title: 'Code review', date: '2026-03-11', time: '16:00', endTime: '17:00', duration: 60, color: 'violet', type: 'control', assignee: 'Вадим', project: 'internal' },
+  ],
 };
 
 export default function BudgetSystem() {
@@ -171,10 +205,19 @@ export default function BudgetSystem() {
   const today = new Date();
   const currentDay = today.getDate();
   const currentMonthKey = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}`;
+  const todayKey = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
   
   const [selectedMonth, setSelectedMonth] = useState(currentMonthKey);
   const [tab, setTab] = useState('habits');
   const [mainTab, setMainTab] = useState('habits');
+  
+  // Календарь состояния
+  const [calendarDate, setCalendarDate] = useState(today);
+  const [calendarView, setCalendarView] = useState('week'); // day, week, month, agenda
+  const [selectedProject, setSelectedProject] = useState('all');
+  const [expandedProjects, setExpandedProjects] = useState(['work', 'personal']);
+  const [showAddTask, setShowAddTask] = useState(false);
+  const [newTask, setNewTask] = useState({ title: '', date: todayKey, time: '10:00', endTime: '11:00', duration: 60, color: 'blue', type: 'executor', assignee: null, project: '' });
 
   useEffect(() => { 
     checkAuth();
@@ -571,6 +614,89 @@ export default function BudgetSystem() {
   const isRecurringPaid = (id) => (data.dds?.[selectedMonth] || []).some(d => d.type === 'recurring' && d.recurringId === id);
   const isRecurringSkipped = (id) => data.skippedRecurring?.[selectedMonth]?.includes(id);
 
+  // === КАЛЕНДАРЬ ===
+  const fmtDateCal = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  const isTodayCal = (date) => fmtDateCal(date) === fmtDateCal(today);
+  const isSelectedCal = (date) => fmtDateCal(date) === fmtDateCal(calendarDate);
+  
+  const getCalendarMonthDays = () => {
+    const year = calendarDate.getFullYear();
+    const month = calendarDate.getMonth();
+    const firstDay = new Date(year, month, 1);
+    const lastDay = new Date(year, month + 1, 0);
+    const startPad = (firstDay.getDay() + 6) % 7;
+    const days = [];
+    
+    for (let i = startPad - 1; i >= 0; i--) {
+      const d = new Date(year, month, -i);
+      days.push({ date: d, isCurrentMonth: false });
+    }
+    for (let i = 1; i <= lastDay.getDate(); i++) {
+      days.push({ date: new Date(year, month, i), isCurrentMonth: true });
+    }
+    while (days.length < 42) {
+      const d = new Date(year, month + 1, days.length - lastDay.getDate() - startPad + 1);
+      days.push({ date: d, isCurrentMonth: false });
+    }
+    return days;
+  };
+  
+  const getCalendarWeekDays = () => {
+    const start = new Date(calendarDate);
+    const day = start.getDay();
+    const diff = start.getDate() - day + (day === 0 ? -6 : 1);
+    start.setDate(diff);
+    
+    return Array.from({ length: 7 }, (_, i) => {
+      const d = new Date(start);
+      d.setDate(start.getDate() + i);
+      return d;
+    });
+  };
+  
+  const getTasksForDate = (date) => {
+    const dateStr = fmtDateCal(date);
+    let tasks = (data?.calendarTasks || []).filter(t => t.date === dateStr);
+    if (selectedProject !== 'all') {
+      const project = (data?.calendarProjects || []).find(p => p.id === selectedProject);
+      if (project) {
+        const subIds = project.subprojects?.map(s => s.id) || [];
+        tasks = tasks.filter(t => t.project === selectedProject || subIds.includes(t.project));
+      } else {
+        tasks = tasks.filter(t => t.project === selectedProject);
+      }
+    }
+    return tasks;
+  };
+  
+  const toggleCalendarProject = (projectId) => {
+    setExpandedProjects(prev => 
+      prev.includes(projectId) 
+        ? prev.filter(p => p !== projectId)
+        : [...prev, projectId]
+    );
+  };
+  
+  const addCalendarTask = () => {
+    if (!newTask.title.trim()) return;
+    const newData = { ...data };
+    if (!newData.calendarTasks) newData.calendarTasks = [];
+    newData.calendarTasks.push({
+      ...newTask,
+      id: Date.now(),
+    });
+    save(newData);
+    setNewTask({ title: '', date: todayKey, time: '10:00', endTime: '11:00', duration: 60, color: 'blue', type: 'executor', assignee: null, project: '' });
+    setShowAddTask(false);
+  };
+  
+  const removeCalendarTask = (taskId) => {
+    const newData = { ...data, calendarTasks: (data.calendarTasks || []).filter(t => t.id !== taskId) };
+    save(newData);
+  };
+  
+  const calendarHours = Array.from({ length: 14 }, (_, i) => i + 7); // 7:00 - 20:00
+
   // === ПРИВЫЧКИ ===
   const [habitView, setHabitView] = useState('week');
   const [showAddHabit, setShowAddHabit] = useState(false);
@@ -589,7 +715,6 @@ export default function BudgetSystem() {
   const [draggedHabit, setDraggedHabit] = useState(null);
   const [dragOverHabit, setDragOverHabit] = useState(null);
 
-  const todayKey = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
   const fmtDate = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 
   const loadQuote = async () => {
@@ -1039,73 +1164,50 @@ export default function BudgetSystem() {
   const todayHabitsDone = (data?.habits || []).filter(h => !h.archived && isHabitCompleted(h.id, today)).length;
 
   return (
-    <div className="min-h-screen bg-neutral-50 pb-20 sm:pb-0" style={{ fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" }}>
-      {/* Desktop Header */}
-      <header className="hidden sm:block bg-white border-b border-neutral-200 sticky top-0 z-50">
-        <div className="max-w-4xl mx-auto px-4 py-3">
-          <div className="flex items-center justify-between mb-2">
-            <div className="flex bg-neutral-100 rounded-lg p-1">
-              <button onClick={() => { setMainTab('finance'); setTab('budget'); }} className={`px-4 py-2 rounded-md text-sm font-medium transition-all ${mainTab === 'finance' ? 'bg-white shadow-sm text-neutral-800' : 'text-neutral-500'}`}>
-                💰 Финансы
-              </button>
-              <button onClick={() => { setMainTab('habits'); setTab('habits'); }} className={`px-4 py-2 rounded-md text-sm font-medium transition-all ${mainTab === 'habits' ? 'bg-white shadow-sm text-neutral-800' : 'text-neutral-500'}`}>
-                ✅ Привычки
-              </button>
+    <div className="min-h-screen bg-neutral-50" style={{ fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" }}>
+      {/* Desktop Header - верхняя панель с табами */}
+      <header className="hidden sm:flex h-14 bg-white border-b border-neutral-200 sticky top-0 z-50 items-center justify-between px-4">
+        <div className="flex items-center gap-6">
+          {/* Logo */}
+          <div className="flex items-center gap-2">
+            <div className="w-8 h-8 bg-gradient-to-br from-blue-500 to-violet-500 rounded-lg flex items-center justify-center">
+              <span className="text-white font-bold text-sm">B</span>
             </div>
-            <button onClick={handleLogout} className="p-2 hover:bg-red-50 rounded-lg transition-colors group" title="Выйти">
-              <LogOut size={18} className="text-neutral-400 group-hover:text-red-500" />
-            </button>
+            <span className="font-semibold text-neutral-800">Budget App</span>
           </div>
-
-          {mainTab === 'finance' && (
-            <>
-              <div className="flex items-center justify-center gap-3 mb-2">
-                <button onClick={() => changeMonth(-1)} className="p-1.5 hover:bg-neutral-100 rounded-lg"><ChevronLeft size={20} className="text-neutral-400" /></button>
-                <div className="text-center min-w-[150px]">
-                  <h1 className="text-lg font-semibold text-neutral-800">{monthName}</h1>
-                  <div className="text-xs text-neutral-400">Сегодня: {currentDay} {MONTHS_SHORT[today.getMonth()]}</div>
-                </div>
-                <button onClick={() => changeMonth(1)} className="p-1.5 hover:bg-neutral-100 rounded-lg"><ChevronRight size={20} className="text-neutral-400" /></button>
-              </div>
-              <div className="flex items-center gap-1 bg-neutral-100 rounded-lg p-1">
-                {[
-                  { id: 'budget', label: 'Бюджет' },
-                  { id: 'employees', label: 'Сотрудники' },
-                  { id: 'recurring', label: 'Пост.' },
-                  { id: 'credits', label: 'Кредиты' },
-                  { id: 'dds', label: 'ДДС' },
-                ].map(t => (
-                  <button key={t.id} onClick={() => setTab(t.id)} className={`px-3 py-1.5 rounded-md text-sm transition-all ${tab === t.id ? 'bg-white text-neutral-800 shadow-sm font-medium' : 'text-neutral-500'}`}>
-                    {t.label}
-                    {t.id === 'dds' && dds.length > 0 && <span className="ml-1 text-xs bg-emerald-500 text-white px-1.5 rounded-full">{dds.length}</span>}
-                  </button>
-                ))}
-              </div>
-            </>
-          )}
-
-          {mainTab === 'habits' && (
-            <>
-              <div className="text-center mb-2">
-                <h1 className="text-lg font-semibold text-neutral-800">Трекер привычек</h1>
-                <div className="text-xs text-neutral-400">Сегодня: {currentDay} {MONTHS_SHORT[today.getMonth()]}</div>
-              </div>
-              <div className="flex items-center gap-1 bg-neutral-100 rounded-lg p-1">
-                {[
-                  { id: 'habits', label: 'Трекер' },
-                  { id: 'journal', label: 'Дневник' },
-                ].map(t => (
-                  <button key={t.id} onClick={() => setTab(t.id)} className={`px-4 py-1.5 rounded-md text-sm transition-all ${tab === t.id ? 'bg-white text-neutral-800 shadow-sm font-medium' : 'text-neutral-500'}`}>
-                    {t.label}
-                  </button>
-                ))}
-              </div>
-            </>
-          )}
+          
+          {/* Main Tabs */}
+          <nav className="flex items-center gap-1 bg-neutral-100 rounded-lg p-1">
+            {[
+              { id: 'finance', icon: Wallet, label: 'Финансы' },
+              { id: 'habits', icon: Target, label: 'Привычки' },
+              { id: 'calendar', icon: Calendar, label: 'Календарь' },
+              { id: 'journal', icon: BookOpen, label: 'Дневник' },
+            ].map(t => (
+              <button
+                key={t.id}
+                onClick={() => { setMainTab(t.id); if (t.id === 'finance') setTab('budget'); if (t.id === 'habits') setTab('habits'); if (t.id === 'journal') setTab('journal'); }}
+                className={`flex items-center gap-2 px-4 py-2 rounded-md text-sm font-medium transition-all ${
+                  mainTab === t.id ? 'bg-white shadow text-neutral-800' : 'text-neutral-500 hover:text-neutral-700'
+                }`}
+              >
+                <t.icon size={16} />
+                {t.label}
+              </button>
+            ))}
+          </nav>
+        </div>
+        
+        <div className="flex items-center gap-3">
+          <button className="p-2 hover:bg-neutral-100 rounded-lg text-neutral-500"><Search size={18} /></button>
+          <button className="p-2 hover:bg-neutral-100 rounded-lg text-neutral-500"><Settings size={18} /></button>
+          <button onClick={handleLogout} className="p-2 hover:bg-red-50 rounded-lg transition-colors group" title="Выйти">
+            <LogOut size={18} className="text-neutral-400 group-hover:text-red-500" />
+          </button>
         </div>
       </header>
 
-      {/* Mobile Header - оптимизированный */}
+      {/* Mobile Header */}
       <header className="sm:hidden bg-white border-b border-neutral-100 sticky top-0 z-50 safe-area-top">
         <div className="px-4 py-3">
           {mainTab === 'finance' && (
@@ -1189,28 +1291,194 @@ export default function BudgetSystem() {
               )}
             </>
           )}
+          
+          {mainTab === 'calendar' && (
+            <>
+              <div className="flex items-center justify-between">
+                <button onClick={() => setCalendarDate(new Date(calendarDate.setDate(calendarDate.getDate() - 7)))} className="w-10 h-10 flex items-center justify-center rounded-full active:bg-neutral-100">
+                  <ChevronLeft size={22} className="text-neutral-600" />
+                </button>
+                <div className="text-center">
+                  <h1 className="text-[17px] font-semibold text-neutral-800">{MONTHS[calendarDate.getMonth()]} {calendarDate.getFullYear()}</h1>
+                </div>
+                <button onClick={() => setCalendarDate(new Date(calendarDate.setDate(calendarDate.getDate() + 7)))} className="w-10 h-10 flex items-center justify-center rounded-full active:bg-neutral-100">
+                  <ChevronRight size={22} className="text-neutral-600" />
+                </button>
+              </div>
+              <div className="flex gap-2 mt-3">
+                {['День', 'Неделя', 'Месяц'].map((v, i) => (
+                  <button 
+                    key={v}
+                    onClick={() => setCalendarView(['day', 'week', 'month'][i])}
+                    className={`px-4 py-2 rounded-full text-sm font-medium transition-all ${
+                      calendarView === ['day', 'week', 'month'][i] ? 'bg-blue-500 text-white' : 'bg-neutral-100 text-neutral-600'
+                    }`}
+                  >
+                    {v}
+                  </button>
+                ))}
+              </div>
+            </>
+          )}
+          
+          {mainTab === 'journal' && (
+            <div className="flex items-center justify-between">
+              <div>
+                <h1 className="text-[17px] font-semibold text-neutral-800">Дневник</h1>
+                <div className="text-xs text-neutral-400">{currentDay} {MONTHS_SHORT[today.getMonth()]}</div>
+              </div>
+            </div>
+          )}
         </div>
       </header>
 
       {/* Bottom Navigation - Mobile Only */}
-      <nav className="sm:hidden fixed bottom-0 left-0 right-0 bg-white border-t border-neutral-100 z-50 px-6 pb-6 pt-2 safe-area-bottom">
+      <nav className="sm:hidden fixed bottom-0 left-0 right-0 bg-white border-t border-neutral-100 z-50 px-4 pb-6 pt-2 safe-area-bottom">
         <div className="flex items-center justify-around">
-          <button onClick={() => { setMainTab('finance'); setTab('budget'); }} className={`flex flex-col items-center gap-1 py-2 px-4 rounded-2xl transition-all ${mainTab === 'finance' ? 'text-blue-600' : 'text-neutral-400'}`}>
-            <TrendingUp size={24} strokeWidth={mainTab === 'finance' ? 2.5 : 1.5} />
-            <span className="text-[11px] font-medium">Финансы</span>
+          <button onClick={() => { setMainTab('finance'); setTab('budget'); }} className={`flex flex-col items-center gap-1 py-2 px-3 rounded-2xl transition-all ${mainTab === 'finance' ? 'text-blue-600' : 'text-neutral-400'}`}>
+            <Wallet size={24} strokeWidth={mainTab === 'finance' ? 2.5 : 1.5} />
+            <span className="text-[10px] font-medium">Финансы</span>
           </button>
-          <button onClick={() => { setMainTab('habits'); setTab('habits'); }} className={`flex flex-col items-center gap-1 py-2 px-4 rounded-2xl transition-all ${mainTab === 'habits' && tab === 'habits' ? 'text-blue-600' : 'text-neutral-400'}`}>
-            <Target size={24} strokeWidth={mainTab === 'habits' && tab === 'habits' ? 2.5 : 1.5} />
-            <span className="text-[11px] font-medium">Привычки</span>
+          <button onClick={() => { setMainTab('habits'); setTab('habits'); }} className={`flex flex-col items-center gap-1 py-2 px-3 rounded-2xl transition-all ${mainTab === 'habits' ? 'text-blue-600' : 'text-neutral-400'}`}>
+            <Target size={24} strokeWidth={mainTab === 'habits' ? 2.5 : 1.5} />
+            <span className="text-[10px] font-medium">Привычки</span>
           </button>
-          <button onClick={() => { setMainTab('habits'); setTab('journal'); }} className={`flex flex-col items-center gap-1 py-2 px-4 rounded-2xl transition-all ${mainTab === 'habits' && tab === 'journal' ? 'text-blue-600' : 'text-neutral-400'}`}>
-            <BookOpen size={24} strokeWidth={mainTab === 'habits' && tab === 'journal' ? 2.5 : 1.5} />
-            <span className="text-[11px] font-medium">Дневник</span>
+          <button onClick={() => { setMainTab('calendar'); }} className={`flex flex-col items-center gap-1 py-2 px-3 rounded-2xl transition-all ${mainTab === 'calendar' ? 'text-blue-600' : 'text-neutral-400'}`}>
+            <Calendar size={24} strokeWidth={mainTab === 'calendar' ? 2.5 : 1.5} />
+            <span className="text-[10px] font-medium">Календарь</span>
+          </button>
+          <button onClick={() => { setMainTab('journal'); setTab('journal'); }} className={`flex flex-col items-center gap-1 py-2 px-3 rounded-2xl transition-all ${mainTab === 'journal' ? 'text-blue-600' : 'text-neutral-400'}`}>
+            <BookOpen size={24} strokeWidth={mainTab === 'journal' ? 2.5 : 1.5} />
+            <span className="text-[10px] font-medium">Дневник</span>
           </button>
         </div>
       </nav>
 
-      <main className="max-w-4xl mx-auto px-4 py-4 sm:py-6 sm:px-4 pb-28 sm:pb-6">
+      {/* Main Content Area */}
+      <div className="flex flex-1 pb-20 sm:pb-0">
+        {/* Calendar Sidebar - Desktop only */}
+        {mainTab === 'calendar' && (
+          <aside className="hidden sm:flex w-64 bg-white border-r border-neutral-200 flex-col flex-shrink-0 h-[calc(100vh-56px)] sticky top-14">
+            {/* Mini Calendar */}
+            <div className="p-4 border-b border-neutral-100">
+              <div className="flex items-center justify-between mb-3">
+                <span className="text-sm font-semibold text-neutral-800">{MONTHS[calendarDate.getMonth()]} {calendarDate.getFullYear()}</span>
+                <div className="flex gap-1">
+                  <button onClick={() => setCalendarDate(new Date(calendarDate.getFullYear(), calendarDate.getMonth() - 1, 1))} className="p-1 hover:bg-neutral-100 rounded text-neutral-400 hover:text-neutral-600">
+                    <ChevronLeft size={14} />
+                  </button>
+                  <button onClick={() => setCalendarDate(new Date(calendarDate.getFullYear(), calendarDate.getMonth() + 1, 1))} className="p-1 hover:bg-neutral-100 rounded text-neutral-400 hover:text-neutral-600">
+                    <ChevronRight size={14} />
+                  </button>
+                </div>
+              </div>
+              <div className="grid grid-cols-7 gap-1 text-center text-xs">
+                {DAYS_SHORT.map(d => (
+                  <div key={d} className="py-1 text-neutral-400 font-medium">{d[0]}</div>
+                ))}
+                {getCalendarMonthDays().slice(0, 35).map((day, i) => (
+                  <button
+                    key={i}
+                    onClick={() => setCalendarDate(day.date)}
+                    className={`py-1 rounded text-xs transition-colors ${
+                      isTodayCal(day.date) ? 'bg-blue-500 text-white font-bold' :
+                      isSelectedCal(day.date) ? 'bg-blue-100 text-blue-600 font-medium' :
+                      day.isCurrentMonth ? 'text-neutral-700 hover:bg-neutral-100' : 'text-neutral-300'
+                    }`}
+                  >
+                    {day.date.getDate()}
+                  </button>
+                ))}
+              </div>
+            </div>
+            
+            {/* Projects */}
+            <div className="flex-1 overflow-auto p-3">
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-xs font-semibold text-neutral-400 uppercase tracking-wide">Проекты</span>
+                <button className="p-1 hover:bg-neutral-100 rounded text-neutral-400 hover:text-neutral-600">
+                  <Plus size={14} />
+                </button>
+              </div>
+              
+              {/* All Tasks */}
+              <button
+                onClick={() => setSelectedProject('all')}
+                className={`w-full flex items-center gap-2 px-2 py-2 rounded-lg text-sm transition-colors mb-1 ${
+                  selectedProject === 'all' ? 'bg-blue-50 text-blue-600' : 'text-neutral-600 hover:bg-neutral-50'
+                }`}
+              >
+                <Calendar size={16} />
+                <span className="font-medium">Все события</span>
+                <span className="ml-auto text-xs text-neutral-400">{(data?.calendarTasks || []).length}</span>
+              </button>
+              
+              {/* Project List */}
+              <div className="space-y-1">
+                {(data?.calendarProjects || []).map(project => (
+                  <div key={project.id}>
+                    <button
+                      onClick={() => {
+                        if (project.subprojects?.length > 0) {
+                          toggleCalendarProject(project.id);
+                        }
+                        setSelectedProject(project.id);
+                      }}
+                      className={`w-full flex items-center gap-2 px-2 py-2 rounded-lg text-sm transition-colors ${
+                        selectedProject === project.id ? 'bg-blue-50 text-blue-600' : 'text-neutral-600 hover:bg-neutral-50'
+                      }`}
+                    >
+                      {project.subprojects?.length > 0 && (
+                        <ChevronDown 
+                          size={14} 
+                          className={`text-neutral-400 transition-transform ${expandedProjects.includes(project.id) ? '' : '-rotate-90'}`}
+                        />
+                      )}
+                      {!project.subprojects?.length && <div className="w-3.5" />}
+                      <div className={`w-3 h-3 rounded-full ${TASK_COLORS[project.color]?.dot || 'bg-neutral-400'}`} />
+                      <span className="font-medium">{project.name}</span>
+                      <span className="ml-auto text-xs text-neutral-400">
+                        {(data?.calendarTasks || []).filter(t => t.project === project.id || project.subprojects?.some(sp => sp.id === t.project)).length}
+                      </span>
+                    </button>
+                    
+                    {/* Subprojects */}
+                    {expandedProjects.includes(project.id) && project.subprojects?.length > 0 && (
+                      <div className="ml-5 mt-1 space-y-1">
+                        {project.subprojects.map(sub => (
+                          <button
+                            key={sub.id}
+                            onClick={() => setSelectedProject(sub.id)}
+                            className={`w-full flex items-center gap-2 px-2 py-1.5 rounded-lg text-sm transition-colors ${
+                              selectedProject === sub.id ? 'bg-blue-50 text-blue-600' : 'text-neutral-500 hover:bg-neutral-50'
+                            }`}
+                          >
+                            <Hash size={12} className="text-neutral-400" />
+                            <span>{sub.name}</span>
+                            <span className="ml-auto text-xs text-neutral-400">
+                              {(data?.calendarTasks || []).filter(t => t.project === sub.id).length}
+                            </span>
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+            
+            {/* Add Project Button */}
+            <div className="p-3 border-t border-neutral-100">
+              <button className="w-full flex items-center justify-center gap-2 px-3 py-2 text-sm text-neutral-500 hover:text-neutral-700 hover:bg-neutral-50 rounded-lg transition-colors">
+                <Plus size={16} />
+                Новый проект
+              </button>
+            </div>
+          </aside>
+        )}
+
+        {/* Main Content */}
+        <main className={`flex-1 ${mainTab === 'calendar' ? 'sm:overflow-hidden' : 'max-w-4xl mx-auto'} px-4 py-4 sm:py-6 sm:px-4`}>
         {/* ФИНАНСЫ */}
         {mainTab === 'finance' && (
           <>
@@ -1231,6 +1499,31 @@ export default function BudgetSystem() {
               <div className="text-xs opacity-70">К концу</div>
               <div className={`text-lg font-semibold ${endBalance >= 0 ? 'text-white' : 'text-red-300'}`}>{fmtShort(endBalance)}</div>
             </div>
+          </div>
+        </div>
+
+        {/* Desktop: Finance sub-header */}
+        <div className="hidden sm:flex items-center justify-between mb-4">
+          <div className="flex items-center gap-4">
+            <div className="flex items-center gap-2">
+              <button onClick={() => changeMonth(-1)} className="p-1.5 hover:bg-neutral-100 rounded-lg"><ChevronLeft size={20} className="text-neutral-400" /></button>
+              <span className="text-lg font-semibold text-neutral-800 min-w-[150px] text-center">{monthName}</span>
+              <button onClick={() => changeMonth(1)} className="p-1.5 hover:bg-neutral-100 rounded-lg"><ChevronRight size={20} className="text-neutral-400" /></button>
+            </div>
+          </div>
+          <div className="flex bg-neutral-100 rounded-lg p-1">
+            {[
+              { id: 'budget', label: 'Бюджет' },
+              { id: 'employees', label: 'Сотрудники' },
+              { id: 'recurring', label: 'Пост.' },
+              { id: 'credits', label: 'Кредиты' },
+              { id: 'dds', label: 'ДДС' },
+            ].map(t => (
+              <button key={t.id} onClick={() => setTab(t.id)} className={`px-3 py-1.5 rounded-md text-sm transition-all ${tab === t.id ? 'bg-white text-neutral-800 shadow-sm font-medium' : 'text-neutral-500'}`}>
+                {t.label}
+                {t.id === 'dds' && dds.length > 0 && <span className="ml-1 text-xs bg-emerald-500 text-white px-1.5 rounded-full">{dds.length}</span>}
+              </button>
+            ))}
           </div>
         </div>
 
@@ -2213,9 +2506,250 @@ export default function BudgetSystem() {
           </div>
         );
         })()}
+        </>
+        )}
 
-        {/* ДНЕВНИК */}
-        {tab === 'journal' && (
+        {/* КАЛЕНДАРЬ */}
+        {mainTab === 'calendar' && (
+          <>
+            {/* Calendar Header - Desktop */}
+            <div className="hidden sm:flex items-center justify-between mb-4">
+              <div className="flex items-center gap-4">
+                <button 
+                  onClick={() => setCalendarDate(today)}
+                  className="px-3 py-1.5 text-sm font-medium text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
+                >
+                  Сегодня
+                </button>
+                <div className="flex items-center border border-neutral-200 rounded-lg">
+                  <button onClick={() => setCalendarDate(new Date(calendarDate.getFullYear(), calendarDate.getMonth(), calendarDate.getDate() - (calendarView === 'month' ? 30 : calendarView === 'week' ? 7 : 1)))} className="p-2 hover:bg-neutral-50 rounded-l-lg border-r border-neutral-200">
+                    <ChevronLeft size={16} />
+                  </button>
+                  <span className="px-4 text-sm font-medium min-w-[180px] text-center">
+                    {calendarView === 'month' ? `${MONTHS[calendarDate.getMonth()]} ${calendarDate.getFullYear()}` : 
+                     calendarView === 'week' ? `${getCalendarWeekDays()[0].getDate()} - ${getCalendarWeekDays()[6].getDate()} ${MONTHS[calendarDate.getMonth()]}` :
+                     `${calendarDate.getDate()} ${MONTHS[calendarDate.getMonth()]} ${calendarDate.getFullYear()}`}
+                  </span>
+                  <button onClick={() => setCalendarDate(new Date(calendarDate.getFullYear(), calendarDate.getMonth(), calendarDate.getDate() + (calendarView === 'month' ? 30 : calendarView === 'week' ? 7 : 1)))} className="p-2 hover:bg-neutral-50 rounded-r-lg border-l border-neutral-200">
+                    <ChevronRight size={16} />
+                  </button>
+                </div>
+              </div>
+              
+              <div className="flex items-center gap-3">
+                <div className="flex bg-neutral-100 rounded-lg p-1">
+                  {[
+                    { id: 'day', label: 'День' },
+                    { id: 'week', label: 'Неделя' },
+                    { id: 'month', label: 'Месяц' },
+                  ].map(v => (
+                    <button
+                      key={v.id}
+                      onClick={() => setCalendarView(v.id)}
+                      className={`px-3 py-1.5 text-sm font-medium rounded-md transition-all ${
+                        calendarView === v.id ? 'bg-white shadow text-neutral-800' : 'text-neutral-500 hover:text-neutral-700'
+                      }`}
+                    >
+                      {v.label}
+                    </button>
+                  ))}
+                </div>
+                
+                <button 
+                  onClick={() => setShowAddTask(true)}
+                  className="flex items-center gap-2 px-4 py-2 bg-blue-500 hover:bg-blue-600 text-white rounded-lg font-medium transition-colors"
+                >
+                  <Plus size={18} />
+                  Добавить
+                </button>
+              </div>
+            </div>
+
+            {/* Week View */}
+            {calendarView === 'week' && (
+              <div className="bg-white rounded-xl border border-neutral-200 overflow-hidden">
+                {/* Week Header */}
+                <div className="grid grid-cols-8 border-b border-neutral-200">
+                  <div className="p-3 text-center text-xs text-neutral-400 border-r border-neutral-100"></div>
+                  {getCalendarWeekDays().map((day, i) => (
+                    <div 
+                      key={i} 
+                      onClick={() => { setCalendarDate(day); setCalendarView('day'); }}
+                      className={`p-3 text-center border-r border-neutral-100 last:border-0 cursor-pointer hover:bg-neutral-50 ${isTodayCal(day) ? 'bg-blue-50' : ''}`}
+                    >
+                      <div className="text-xs text-neutral-400 mb-1">{DAYS_SHORT[i]}</div>
+                      <div className={`w-8 h-8 mx-auto flex items-center justify-center rounded-full text-lg font-semibold ${
+                        isTodayCal(day) ? 'bg-blue-500 text-white' : 'text-neutral-800'
+                      }`}>
+                        {day.getDate()}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+                
+                {/* Time Grid */}
+                <div className="max-h-[500px] overflow-auto">
+                  {calendarHours.map(hour => (
+                    <div key={hour} className="grid grid-cols-8 border-b border-neutral-100">
+                      <div className="p-2 text-right text-xs text-neutral-400 pr-3 border-r border-neutral-100">
+                        {String(hour).padStart(2, '0')}:00
+                      </div>
+                      {getCalendarWeekDays().map((day, dayIndex) => {
+                        const dayTasks = getTasksForDate(day).filter(t => parseInt(t.time.split(':')[0]) === hour);
+                        return (
+                          <div 
+                            key={dayIndex} 
+                            className={`min-h-[60px] border-r border-neutral-100 last:border-0 relative ${isTodayCal(day) ? 'bg-blue-50/30' : ''}`}
+                          >
+                            {dayTasks.map(task => {
+                              const startMinute = parseInt(task.time.split(':')[1]);
+                              const TypeIcon = TASK_TYPES[task.type].icon;
+                              return (
+                                <div
+                                  key={task.id}
+                                  className={`absolute left-1 right-1 px-2 py-1 rounded-lg ${TASK_COLORS[task.color].bg} text-white text-xs cursor-pointer hover:opacity-90 transition-opacity shadow-sm`}
+                                  style={{
+                                    top: `${(startMinute / 60) * 60 + 2}px`,
+                                    height: `${Math.max((task.duration / 60) * 60 - 4, 24)}px`,
+                                  }}
+                                >
+                                  <div className="flex items-center gap-1">
+                                    <TypeIcon size={10} />
+                                    <span className="font-medium truncate">{task.title}</span>
+                                  </div>
+                                  {task.duration >= 45 && (
+                                    <div className="text-white/80 text-[10px] mt-0.5">
+                                      {task.time} - {task.endTime}
+                                    </div>
+                                  )}
+                                </div>
+                              );
+                            })}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Month View */}
+            {calendarView === 'month' && (
+              <div className="bg-white rounded-xl border border-neutral-200 overflow-hidden">
+                <div className="grid grid-cols-7 border-b border-neutral-200">
+                  {DAYS_SHORT.map(d => (
+                    <div key={d} className="p-3 text-center text-sm font-medium text-neutral-500 border-r border-neutral-100 last:border-0">
+                      {d}
+                    </div>
+                  ))}
+                </div>
+                
+                <div className="grid grid-cols-7">
+                  {getCalendarMonthDays().map((day, i) => {
+                    const dayTasks = getTasksForDate(day.date);
+                    return (
+                      <div
+                        key={i}
+                        onClick={() => { setCalendarDate(day.date); setCalendarView('day'); }}
+                        className={`min-h-[100px] p-2 border-r border-b border-neutral-100 cursor-pointer hover:bg-neutral-50 transition-colors ${
+                          !day.isCurrentMonth ? 'bg-neutral-50' : ''
+                        } ${isSelectedCal(day.date) ? 'bg-blue-50' : ''}`}
+                      >
+                        <div className={`w-7 h-7 flex items-center justify-center rounded-full text-sm mb-1 ${
+                          isTodayCal(day.date) ? 'bg-blue-500 text-white font-bold' :
+                          day.isCurrentMonth ? 'text-neutral-800' : 'text-neutral-400'
+                        }`}>
+                          {day.date.getDate()}
+                        </div>
+                        <div className="space-y-1">
+                          {dayTasks.slice(0, 2).map(task => {
+                            const TypeIcon = TASK_TYPES[task.type].icon;
+                            return (
+                              <div
+                                key={task.id}
+                                className={`px-1.5 py-0.5 rounded text-xs ${TASK_COLORS[task.color].light} ${TASK_COLORS[task.color].text} truncate flex items-center gap-1`}
+                              >
+                                <TypeIcon size={10} />
+                                {task.title}
+                              </div>
+                            );
+                          })}
+                          {dayTasks.length > 2 && (
+                            <div className="text-xs text-neutral-400 px-1">+{dayTasks.length - 2}</div>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
+            {/* Day View */}
+            {calendarView === 'day' && (
+              <div className="bg-white rounded-xl border border-neutral-200 overflow-hidden">
+                <div className="p-4 border-b border-neutral-200 bg-neutral-50 flex items-center justify-between">
+                  <div>
+                    <h2 className="text-lg font-semibold text-neutral-800">
+                      {DAYS_FULL[(calendarDate.getDay() + 6) % 7]}, {calendarDate.getDate()} {MONTHS[calendarDate.getMonth()]}
+                    </h2>
+                    <p className="text-sm text-neutral-500">{getTasksForDate(calendarDate).length} событий</p>
+                  </div>
+                  <button 
+                    onClick={() => setShowAddTask(true)}
+                    className="sm:hidden w-10 h-10 bg-blue-500 rounded-full flex items-center justify-center shadow-lg"
+                  >
+                    <Plus size={20} className="text-white" />
+                  </button>
+                </div>
+                <div className="max-h-[500px] overflow-auto">
+                  {calendarHours.map(hour => {
+                    const hourTasks = getTasksForDate(calendarDate).filter(t => parseInt(t.time.split(':')[0]) === hour);
+                    return (
+                      <div key={hour} className="flex border-b border-neutral-100">
+                        <div className="w-16 p-3 text-right text-sm text-neutral-400 border-r border-neutral-100 flex-shrink-0">
+                          {String(hour).padStart(2, '0')}:00
+                        </div>
+                        <div className="flex-1 min-h-[60px] p-2">
+                          {hourTasks.map(task => {
+                            const TypeIcon = TASK_TYPES[task.type].icon;
+                            return (
+                              <div
+                                key={task.id}
+                                className={`${TASK_COLORS[task.color].light} border-l-4 ${TASK_COLORS[task.color].border} rounded-r-lg p-3 mb-2`}
+                              >
+                                <div className="flex items-center justify-between">
+                                  <div className="flex items-center gap-2">
+                                    <TypeIcon size={16} className={TASK_COLORS[task.color].text} />
+                                    <span className={`font-medium ${TASK_COLORS[task.color].text}`}>{task.title}</span>
+                                    <span className={`text-xs px-2 py-0.5 rounded-full ${TASK_TYPES[task.type].color} bg-white`}>
+                                      {TASK_TYPES[task.type].label}
+                                    </span>
+                                  </div>
+                                  <button onClick={() => removeCalendarTask(task.id)} className="p-1 hover:bg-white/50 rounded">
+                                    <Trash2 size={14} className="text-neutral-400" />
+                                  </button>
+                                </div>
+                                <div className="flex items-center gap-4 mt-2 text-sm text-neutral-500">
+                                  <span className="flex items-center gap-1"><Clock size={12} /> {task.time} - {task.endTime}</span>
+                                  {task.assignee && <span className="flex items-center gap-1"><User size={12} /> {task.assignee}</span>}
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+          </>
+        )}
+
+        {/* ДНЕВНИК - отдельный таб */}
+        {mainTab === 'journal' && (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div className="bg-white rounded-xl border p-4">
               <div className="flex items-center justify-between mb-3">
@@ -2265,8 +2799,6 @@ export default function BudgetSystem() {
             </div>
           </div>
         )}
-        </>
-        )}
 
         {/* Add Habit Modal */}
         {showAddHabit && (
@@ -2281,6 +2813,107 @@ export default function BudgetSystem() {
                 ))}
               </div>
               <button onClick={addHabit} className="w-full py-2 bg-blue-500 text-white rounded-lg font-medium">Добавить</button>
+            </div>
+          </div>
+        )}
+
+        {/* Add Task Modal */}
+        {showAddTask && (
+          <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
+            <div className="bg-white rounded-2xl w-full max-w-lg p-6">
+              <div className="flex justify-between mb-4">
+                <h2 className="text-lg font-semibold">Новое событие</h2>
+                <button onClick={() => setShowAddTask(false)}><X size={20} className="text-neutral-400" /></button>
+              </div>
+              
+              <input 
+                value={newTask.title}
+                onChange={e => setNewTask({ ...newTask, title: e.target.value })}
+                placeholder="Название события" 
+                className="w-full px-4 py-3 bg-neutral-100 rounded-xl text-lg focus:outline-none focus:ring-2 focus:ring-blue-500 mb-4"
+                autoFocus
+              />
+              
+              <div className="mb-4">
+                <label className="text-sm font-medium text-neutral-500 mb-2 block">Тип задачи</label>
+                <div className="flex gap-2">
+                  <button 
+                    onClick={() => setNewTask({ ...newTask, type: 'executor' })}
+                    className={`flex-1 flex items-center justify-center gap-2 px-4 py-3 rounded-xl font-medium transition-all ${
+                      newTask.type === 'executor' ? 'bg-blue-100 text-blue-600 ring-2 ring-blue-500' : 'bg-neutral-100 text-neutral-600 hover:bg-neutral-200'
+                    }`}
+                  >
+                    <User size={18} /> Исполнитель
+                  </button>
+                  <button 
+                    onClick={() => setNewTask({ ...newTask, type: 'control' })}
+                    className={`flex-1 flex items-center justify-center gap-2 px-4 py-3 rounded-xl font-medium transition-all ${
+                      newTask.type === 'control' ? 'bg-amber-100 text-amber-600 ring-2 ring-amber-500' : 'bg-neutral-100 text-neutral-600 hover:bg-neutral-200'
+                    }`}
+                  >
+                    <Eye size={18} /> Контроль
+                  </button>
+                </div>
+              </div>
+              
+              <div className="grid grid-cols-2 gap-4 mb-4">
+                <div>
+                  <label className="text-sm font-medium text-neutral-500 mb-2 block">Дата</label>
+                  <input 
+                    type="date" 
+                    value={newTask.date}
+                    onChange={e => setNewTask({ ...newTask, date: e.target.value })}
+                    className="w-full px-4 py-3 bg-neutral-100 rounded-xl focus:outline-none"
+                  />
+                </div>
+                <div>
+                  <label className="text-sm font-medium text-neutral-500 mb-2 block">Время</label>
+                  <input 
+                    type="time" 
+                    value={newTask.time}
+                    onChange={e => setNewTask({ ...newTask, time: e.target.value })}
+                    className="w-full px-4 py-3 bg-neutral-100 rounded-xl focus:outline-none"
+                  />
+                </div>
+              </div>
+              
+              {newTask.type === 'control' && (
+                <div className="mb-4">
+                  <label className="text-sm font-medium text-neutral-500 mb-2 block">Исполнитель</label>
+                  <select 
+                    value={newTask.assignee || ''}
+                    onChange={e => setNewTask({ ...newTask, assignee: e.target.value })}
+                    className="w-full px-4 py-3 bg-neutral-100 rounded-xl focus:outline-none"
+                  >
+                    <option value="">Выберите...</option>
+                    {(data?.employees || []).map(emp => (
+                      <option key={emp.id} value={emp.name}>{emp.name}</option>
+                    ))}
+                  </select>
+                </div>
+              )}
+              
+              <div className="mb-4">
+                <label className="text-sm font-medium text-neutral-500 mb-2 block">Цвет</label>
+                <div className="flex gap-2">
+                  {Object.keys(TASK_COLORS).map(c => (
+                    <button 
+                      key={c}
+                      onClick={() => setNewTask({ ...newTask, color: c })}
+                      className={`w-10 h-10 rounded-full ${TASK_COLORS[c].bg} ${newTask.color === c ? 'ring-2 ring-offset-2 ring-neutral-400' : ''} hover:scale-110 transition-transform`}
+                    />
+                  ))}
+                </div>
+              </div>
+              
+              <div className="flex gap-3">
+                <button onClick={() => setShowAddTask(false)} className="flex-1 py-3 rounded-xl font-medium text-neutral-600 hover:bg-neutral-100 transition-colors">
+                  Отмена
+                </button>
+                <button onClick={addCalendarTask} className="flex-1 py-3 bg-blue-500 hover:bg-blue-600 text-white rounded-xl font-medium transition-colors">
+                  Создать
+                </button>
+              </div>
             </div>
           </div>
         )}
@@ -2302,6 +2935,7 @@ export default function BudgetSystem() {
           </div>
         )}
       </main>
+      </div>
     </div>
   );
 }
