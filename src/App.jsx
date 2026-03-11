@@ -324,9 +324,11 @@ export default function BudgetSystem() {
     newData.dds[selectedMonth].push(ddsEntry);
     
     // Удаляем из плана
-    if (type === 'income' || type === 'expense' || type === 'debt') {
-      const listType = type === 'expense' ? 'expenses' : type === 'debt' ? 'debts' : 'income';
-      newData.months[selectedMonth][listType] = newData.months[selectedMonth][listType].filter(i => i.id !== item.id);
+    if (type === 'income' || type === 'expenses' || type === 'debts') {
+      const listType = type;
+      if (newData.months[selectedMonth] && newData.months[selectedMonth][listType]) {
+        newData.months[selectedMonth][listType] = newData.months[selectedMonth][listType].filter(i => i.id !== item.id);
+      }
     }
     
     save(newData);
@@ -2897,30 +2899,81 @@ export default function BudgetSystem() {
 
             {/* Week View */}
             {calendarView === 'week' && (
-              <div className="bg-white rounded-xl border border-neutral-200 overflow-hidden">
-                {/* Week Header */}
-                <div className="grid grid-cols-8 border-b border-neutral-200">
+              <div className="bg-white rounded-xl border border-neutral-200 overflow-hidden flex flex-col h-full">
+                {/* Week Header - Fixed */}
+                <div className="grid grid-cols-8 border-b border-neutral-200 flex-shrink-0">
                   <div className="p-2 sm:p-3 text-center text-xs text-neutral-400 border-r border-neutral-100"></div>
-                  {getCalendarWeekDays().map((day, i) => (
-                    <div 
-                      key={i} 
-                      onClick={() => { setCalendarDate(day); setCalendarView('day'); }}
-                      onDragOver={handleTaskDragOver}
-                      onDrop={(e) => handleTaskDrop(e, day)}
-                      className={`p-2 sm:p-3 text-center border-r border-neutral-100 last:border-0 cursor-pointer hover:bg-neutral-50 ${isTodayCal(day) ? 'bg-blue-50' : ''} ${draggedTask ? 'ring-2 ring-inset ring-blue-200' : ''}`}
-                    >
-                      <div className="text-[10px] sm:text-xs text-neutral-400 mb-1">{DAYS_SHORT[i]}</div>
-                      <div className={`w-6 h-6 sm:w-8 sm:h-8 mx-auto flex items-center justify-center rounded-full text-sm sm:text-lg font-semibold ${
-                        isTodayCal(day) ? 'bg-blue-500 text-white' : 'text-neutral-800'
-                      }`}>
-                        {day.getDate()}
+                  {getCalendarWeekDays().map((day, i) => {
+                    const financialEvents = showFinancialEvents ? getFinancialEventsForDate(day) : [];
+                    return (
+                      <div 
+                        key={i} 
+                        onClick={() => { setCalendarDate(day); setCalendarView('day'); }}
+                        onDragOver={handleTaskDragOver}
+                        onDrop={(e) => handleTaskDrop(e, day)}
+                        className={`p-2 sm:p-3 text-center border-r border-neutral-100 last:border-0 cursor-pointer hover:bg-neutral-50 ${isTodayCal(day) ? 'bg-blue-50' : ''} ${draggedTask ? 'ring-2 ring-inset ring-blue-200' : ''}`}
+                      >
+                        <div className="text-[10px] sm:text-xs text-neutral-400 mb-1">{DAYS_SHORT[i]}</div>
+                        <div className={`w-6 h-6 sm:w-8 sm:h-8 mx-auto flex items-center justify-center rounded-full text-sm sm:text-lg font-semibold ${
+                          isTodayCal(day) ? 'bg-blue-500 text-white' : 'text-neutral-800'
+                        }`}>
+                          {day.getDate()}
+                        </div>
+                        {/* Financial indicators */}
+                        {financialEvents.length > 0 && (
+                          <div className="flex justify-center gap-0.5 mt-1">
+                            {financialEvents.some(e => e.type === 'income') && <div className="w-1.5 h-1.5 rounded-full bg-emerald-500" title="Приход" />}
+                            {financialEvents.some(e => e.type === 'credit') && <div className="w-1.5 h-1.5 rounded-full bg-rose-500" title="Кредит" />}
+                            {financialEvents.some(e => e.type === 'recurring') && <div className="w-1.5 h-1.5 rounded-full bg-amber-500" title="Пост. расход" />}
+                            {financialEvents.some(e => e.type === 'salary') && <div className="w-1.5 h-1.5 rounded-full bg-violet-500" title="ФОТ" />}
+                            {financialEvents.some(e => e.type === 'debt') && <div className="w-1.5 h-1.5 rounded-full bg-red-500" title="Долг" />}
+                          </div>
+                        )}
                       </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
                 
-                {/* Time Grid */}
-                <div ref={calendarGridRef} className="flex-1 overflow-auto" style={{ height: 'calc(100vh - 280px)', minHeight: '400px' }}>
+                {/* Financial Events Row */}
+                {showFinancialEvents && (
+                  <div className="grid grid-cols-8 border-b border-neutral-200 bg-gradient-to-r from-neutral-50 to-white flex-shrink-0">
+                    <div className="p-1 sm:p-2 text-right text-[10px] sm:text-xs text-neutral-400 border-r border-neutral-100 flex items-center justify-end">
+                      💰
+                    </div>
+                    {getCalendarWeekDays().map((day, i) => {
+                      const events = getFinancialEventsForDate(day);
+                      return (
+                        <div key={i} className="p-1 border-r border-neutral-100 last:border-0 min-h-[36px]">
+                          <div className="flex flex-wrap gap-0.5">
+                            {events.slice(0, 3).map(event => (
+                              <div
+                                key={event.id}
+                                className={`text-[9px] px-1 py-0.5 rounded truncate max-w-full ${
+                                  event.isPaid ? 'opacity-40 line-through' : ''
+                                } ${
+                                  event.type === 'income' ? 'bg-emerald-100 text-emerald-700' :
+                                  event.type === 'credit' ? 'bg-rose-100 text-rose-700' :
+                                  event.type === 'recurring' ? 'bg-amber-100 text-amber-700' :
+                                  event.type === 'salary' ? 'bg-violet-100 text-violet-700' :
+                                  'bg-red-100 text-red-700'
+                                }`}
+                                title={`${event.title}: ${event.amount?.toLocaleString()}₽`}
+                              >
+                                {event.icon}
+                              </div>
+                            ))}
+                            {events.length > 3 && (
+                              <div className="text-[9px] text-neutral-400">+{events.length - 3}</div>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+                
+                {/* Time Grid - Scrollable */}
+                <div ref={calendarGridRef} className="flex-1 overflow-auto min-h-0">
                   <div className="relative">
                     {calendarHours.map(hour => {
                       const isCurrentHour = currentTime.getHours() === hour;
@@ -3128,7 +3181,7 @@ export default function BudgetSystem() {
 
             {/* Day View */}
             {calendarView === 'day' && (
-              <div className="bg-white rounded-xl border border-neutral-200 overflow-hidden flex flex-col" style={{ height: 'calc(100vh - 220px)', minHeight: '500px' }}>
+              <div className="bg-white rounded-xl border border-neutral-200 overflow-hidden flex flex-col h-full">
                 <div className="p-4 border-b border-neutral-200 bg-neutral-50 flex items-center justify-between flex-shrink-0">
                   <div>
                     <h2 className="text-lg font-semibold text-neutral-800">
@@ -3172,7 +3225,7 @@ export default function BudgetSystem() {
                   </div>
                 )}
                 
-                <div ref={calendarGridRef} className="flex-1 overflow-auto">
+                <div ref={calendarGridRef} className="flex-1 overflow-auto min-h-0">
                   {calendarHours.map(hour => {
                     const hourTasks = getTasksForDate(calendarDate).filter(t => parseInt(t.time.split(':')[0]) === hour);
                     const isCurrentHour = isTodayCal(calendarDate) && currentTime.getHours() === hour;
