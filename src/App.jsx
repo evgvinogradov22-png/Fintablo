@@ -2927,11 +2927,11 @@ export default function BudgetSystem() {
             </div>
 
             {/* Calendar Content */}
-            <div className="flex-1 min-h-0 flex flex-col">
+            <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
 
             {/* Week View */}
             {calendarView === 'week' && (
-              <div className="bg-white rounded-xl border border-neutral-200 overflow-hidden flex flex-col flex-1 min-h-0">
+              <div className="bg-white rounded-xl border border-neutral-200 flex flex-col flex-1 min-h-0 overflow-hidden">
                 {/* Week Header - Fixed */}
                 <div className="grid grid-cols-8 border-b border-neutral-200 flex-shrink-0">
                   <div className="p-2 sm:p-3 text-center text-xs text-neutral-400 border-r border-neutral-100"></div>
@@ -3051,14 +3051,13 @@ export default function BudgetSystem() {
                 )}
                 
                 {/* Time Grid - Scrollable */}
-                <div ref={calendarGridRef} className="flex-1 overflow-auto min-h-0">
-                  <div className="relative">
-                    {calendarHours.map(hour => {
-                      const isCurrentHour = currentTime.getHours() === hour;
-                      const currentMinuteOffset = currentTime.getMinutes() / 60 * 60;
-                      
-                      return (
-                        <div key={hour} className="grid grid-cols-8 border-b border-neutral-100 relative">
+                <div ref={calendarGridRef} className="flex-1 overflow-y-auto overflow-x-hidden">
+                  {calendarHours.map(hour => {
+                    const isCurrentHour = currentTime.getHours() === hour;
+                    const currentMinuteOffset = currentTime.getMinutes() / 60 * 60;
+                    
+                    return (
+                      <div key={hour} className="grid grid-cols-8 border-b border-neutral-100 relative">
                           <div className="p-1 sm:p-2 text-right text-[10px] sm:text-xs text-neutral-400 pr-1 sm:pr-3 border-r border-neutral-100 h-[60px] flex items-start justify-end">
                             {String(hour).padStart(2, '0')}:00
                           </div>
@@ -3166,7 +3165,6 @@ export default function BudgetSystem() {
                         </div>
                       );
                     })}
-                  </div>
                 </div>
               </div>
             )}
