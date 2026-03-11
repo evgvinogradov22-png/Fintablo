@@ -2927,131 +2927,132 @@ export default function BudgetSystem() {
             </div>
 
             {/* Calendar Content */}
-            <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
+            <div className="flex-1 min-h-0 overflow-y-auto">
 
             {/* Week View */}
             {calendarView === 'week' && (
-              <div className="bg-white rounded-xl border border-neutral-200 flex flex-col flex-1 min-h-0 overflow-hidden">
-                {/* Week Header - Fixed */}
-                <div className="grid grid-cols-8 border-b border-neutral-200 flex-shrink-0">
-                  <div className="p-2 sm:p-3 text-center text-xs text-neutral-400 border-r border-neutral-100"></div>
-                  {getCalendarWeekDays().map((day, i) => (
-                    <div 
-                      key={i} 
-                      onClick={() => { setCalendarDate(day); setCalendarView('day'); }}
-                      onDragOver={handleTaskDragOver}
-                      onDrop={(e) => handleTaskDrop(e, day)}
-                      className={`p-2 sm:p-3 text-center border-r border-neutral-100 last:border-0 cursor-pointer hover:bg-neutral-50 ${isTodayCal(day) ? 'bg-blue-50' : ''} ${draggedTask ? 'ring-2 ring-inset ring-blue-200' : ''}`}
-                    >
-                      <div className="text-[10px] sm:text-xs text-neutral-400 mb-1">{DAYS_SHORT[i]}</div>
-                      <div className={`w-6 h-6 sm:w-8 sm:h-8 mx-auto flex items-center justify-center rounded-full text-sm sm:text-lg font-semibold ${
-                        isTodayCal(day) ? 'bg-blue-500 text-white' : 'text-neutral-800'
-                      }`}>
-                        {day.getDate()}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-                
-                {/* Habits Row */}
-                <div className="grid grid-cols-8 border-b border-neutral-200 bg-gradient-to-r from-emerald-50 to-white flex-shrink-0">
-                  <div className="p-1 sm:p-2 text-right text-[10px] text-neutral-500 border-r border-neutral-100 flex items-center justify-end font-medium">
-                    <Target size={12} className="mr-1" />
-                    Привычки
-                  </div>
-                  {getCalendarWeekDays().map((day, i) => {
-                    const dateKey = fmtDateCal(day);
-                    const activeHabits = (data?.habits || []).filter(h => {
-                      if (h.archived) return false;
-                      // Check if habit has course days and if it's still active
-                      if (h.courseDays && h.createdAt) {
-                        const startDate = new Date(h.createdAt);
-                        const endDate = new Date(startDate);
-                        endDate.setDate(endDate.getDate() + h.courseDays);
-                        if (day > endDate) return false;
-                      }
-                      return true;
-                    });
-                    const completedHabits = activeHabits.filter(h => (data?.habitCompletions?.[dateKey] || []).includes(h.id));
-                    const uncompletedHabits = activeHabits.filter(h => !(data?.habitCompletions?.[dateKey] || []).includes(h.id));
-                    
-                    return (
+              <div className="bg-white rounded-xl border border-neutral-200 overflow-hidden">
+                {/* Week Header - Sticky */}
+                <div className="sticky top-0 z-20 bg-white">
+                  <div className="grid grid-cols-8 border-b border-neutral-200">
+                    <div className="p-2 sm:p-3 text-center text-xs text-neutral-400 border-r border-neutral-100"></div>
+                    {getCalendarWeekDays().map((day, i) => (
                       <div 
                         key={i} 
-                        onClick={() => { setMainTab('habits'); }}
-                        className={`p-0.5 border-r border-neutral-100 last:border-0 min-h-[40px] cursor-pointer hover:bg-emerald-50/50 overflow-hidden`}
+                        onClick={() => { setCalendarDate(day); setCalendarView('day'); }}
+                        onDragOver={handleTaskDragOver}
+                        onDrop={(e) => handleTaskDrop(e, day)}
+                        className={`p-2 sm:p-3 text-center border-r border-neutral-100 last:border-0 cursor-pointer hover:bg-neutral-50 ${isTodayCal(day) ? 'bg-blue-50' : ''} ${draggedTask ? 'ring-2 ring-inset ring-blue-200' : ''}`}
                       >
-                        <div className="space-y-0.5">
-                          {uncompletedHabits.slice(0, 2).map(habit => {
-                            const group = (data?.habitGroups || []).find(g => g.id === habit.groupId);
-                            return (
-                              <div key={habit.id} className="text-[8px] px-1 py-0.5 bg-neutral-100 text-neutral-600 rounded truncate flex items-center gap-0.5">
-                                <div className={`w-1.5 h-1.5 rounded-full ${HABIT_COLORS[group?.color]?.dot || 'bg-neutral-400'}`} />
-                                {habit.name.slice(0, 10)}
-                              </div>
-                            );
-                          })}
-                          {completedHabits.length > 0 && (
-                            <div className="text-[8px] text-emerald-500 px-1">✓ {completedHabits.length}</div>
-                          )}
-                          {uncompletedHabits.length > 2 && (
-                            <div className="text-[8px] text-neutral-400 px-1">+{uncompletedHabits.length - 2}</div>
-                          )}
+                        <div className="text-[10px] sm:text-xs text-neutral-400 mb-1">{DAYS_SHORT[i]}</div>
+                        <div className={`w-6 h-6 sm:w-8 sm:h-8 mx-auto flex items-center justify-center rounded-full text-sm sm:text-lg font-semibold ${
+                          isTodayCal(day) ? 'bg-blue-500 text-white' : 'text-neutral-800'
+                        }`}>
+                          {day.getDate()}
                         </div>
                       </div>
-                    );
-                  })}
-                </div>
+                    ))}
+                  </div>
                 
-                {/* Financial Events Row */}
-                {showFinancialEvents && (
-                  <div className="grid grid-cols-8 border-b border-neutral-200 bg-gradient-to-r from-rose-50 to-white flex-shrink-0">
+                  {/* Habits Row - Sticky */}
+                  <div className="grid grid-cols-8 border-b border-neutral-200 bg-gradient-to-r from-emerald-50 to-white">
                     <div className="p-1 sm:p-2 text-right text-[10px] text-neutral-500 border-r border-neutral-100 flex items-center justify-end font-medium">
-                      💰 Платежи
+                      <Target size={12} className="mr-1" />
+                      Привычки
                     </div>
                     {getCalendarWeekDays().map((day, i) => {
-                      const events = getFinancialEventsForDate(day);
+                      const dateKey = fmtDateCal(day);
+                      const activeHabits = (data?.habits || []).filter(h => {
+                        if (h.archived) return false;
+                        if (h.courseDays && h.createdAt) {
+                          const startDate = new Date(h.createdAt);
+                          const endDate = new Date(startDate);
+                          endDate.setDate(endDate.getDate() + h.courseDays);
+                          if (day > endDate) return false;
+                        }
+                        return true;
+                      });
+                      const completedHabits = activeHabits.filter(h => (data?.habitCompletions?.[dateKey] || []).includes(h.id));
+                      const uncompletedHabits = activeHabits.filter(h => !(data?.habitCompletions?.[dateKey] || []).includes(h.id));
                       
                       return (
                         <div 
                           key={i} 
-                          onDragOver={handleTaskDragOver}
-                          onDrop={(e) => handleTaskDrop(e, day)}
-                          className={`p-0.5 border-r border-neutral-100 last:border-0 min-h-[40px] overflow-hidden`}
+                          onClick={() => { setMainTab('habits'); }}
+                          className={`p-0.5 border-r border-neutral-100 last:border-0 min-h-[40px] cursor-pointer hover:bg-emerald-50/50 overflow-hidden`}
                         >
-                          {events.length > 0 && (
-                            <div className="space-y-0.5">
-                              {events.slice(0, 2).map(event => (
-                                <div
-                                  key={event.id}
-                                  className={`text-[8px] px-1 py-0.5 rounded truncate flex items-center justify-between ${
-                                    event.isPaid ? 'opacity-40 line-through' : ''
-                                  } ${
-                                    event.type === 'income' ? 'bg-emerald-100 text-emerald-700' :
-                                    event.type === 'credit' ? 'bg-rose-100 text-rose-700' :
-                                    event.type === 'recurring' ? 'bg-amber-100 text-amber-700' :
-                                    event.type === 'salary' ? 'bg-violet-100 text-violet-700' :
-                                    'bg-red-100 text-red-700'
-                                  }`}
-                                  title={`${event.title}: ${event.amount?.toLocaleString()}₽`}
-                                >
-                                  <span className="truncate">{event.icon} {event.title?.slice(0, 6)}</span>
-                                  <span className="font-medium ml-0.5 flex-shrink-0">{event.amount >= 1000 ? Math.round(event.amount/1000) + 'к' : event.amount}</span>
+                          <div className="space-y-0.5">
+                            {uncompletedHabits.slice(0, 2).map(habit => {
+                              const group = (data?.habitGroups || []).find(g => g.id === habit.groupId);
+                              return (
+                                <div key={habit.id} className="text-[8px] px-1 py-0.5 bg-neutral-100 text-neutral-600 rounded truncate flex items-center gap-0.5">
+                                  <div className={`w-1.5 h-1.5 rounded-full ${HABIT_COLORS[group?.color]?.dot || 'bg-neutral-400'}`} />
+                                  {habit.name.slice(0, 10)}
                                 </div>
-                              ))}
-                              {events.length > 2 && (
-                                <div className="text-[8px] text-neutral-400 px-1">+{events.length - 2}</div>
-                              )}
-                            </div>
-                          )}
+                              );
+                            })}
+                            {completedHabits.length > 0 && (
+                              <div className="text-[8px] text-emerald-500 px-1">✓ {completedHabits.length}</div>
+                            )}
+                            {uncompletedHabits.length > 2 && (
+                              <div className="text-[8px] text-neutral-400 px-1">+{uncompletedHabits.length - 2}</div>
+                            )}
+                          </div>
                         </div>
                       );
                     })}
                   </div>
-                )}
                 
-                {/* Time Grid - Scrollable */}
-                <div ref={calendarGridRef} className="flex-1 overflow-y-auto overflow-x-hidden">
+                  {/* Financial Events Row - Sticky */}
+                  {showFinancialEvents && (
+                    <div className="grid grid-cols-8 border-b border-neutral-200 bg-gradient-to-r from-rose-50 to-white">
+                      <div className="p-1 sm:p-2 text-right text-[10px] text-neutral-500 border-r border-neutral-100 flex items-center justify-end font-medium">
+                        💰 Платежи
+                      </div>
+                      {getCalendarWeekDays().map((day, i) => {
+                        const events = getFinancialEventsForDate(day);
+                        
+                        return (
+                          <div 
+                            key={i} 
+                            onDragOver={handleTaskDragOver}
+                            onDrop={(e) => handleTaskDrop(e, day)}
+                            className={`p-0.5 border-r border-neutral-100 last:border-0 min-h-[40px] overflow-hidden`}
+                          >
+                            {events.length > 0 && (
+                              <div className="space-y-0.5">
+                                {events.slice(0, 2).map(event => (
+                                  <div
+                                    key={event.id}
+                                    className={`text-[8px] px-1 py-0.5 rounded truncate flex items-center justify-between ${
+                                      event.isPaid ? 'opacity-40 line-through' : ''
+                                    } ${
+                                      event.type === 'income' ? 'bg-emerald-100 text-emerald-700' :
+                                      event.type === 'credit' ? 'bg-rose-100 text-rose-700' :
+                                      event.type === 'recurring' ? 'bg-amber-100 text-amber-700' :
+                                      event.type === 'salary' ? 'bg-violet-100 text-violet-700' :
+                                      'bg-red-100 text-red-700'
+                                    }`}
+                                    title={`${event.title}: ${event.amount?.toLocaleString()}₽`}
+                                  >
+                                    <span className="truncate">{event.icon} {event.title?.slice(0, 6)}</span>
+                                    <span className="font-medium ml-0.5 flex-shrink-0">{event.amount >= 1000 ? Math.round(event.amount/1000) + 'к' : event.amount}</span>
+                                  </div>
+                                ))}
+                                {events.length > 2 && (
+                                  <div className="text-[8px] text-neutral-400 px-1">+{events.length - 2}</div>
+                                )}
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+                
+                {/* Time Grid */}
+                <div ref={calendarGridRef}>
                   {calendarHours.map(hour => {
                     const isCurrentHour = currentTime.getHours() === hour;
                     const currentMinuteOffset = currentTime.getMinutes() / 60 * 60;
