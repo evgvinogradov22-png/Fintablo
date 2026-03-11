@@ -992,7 +992,7 @@ export default function BudgetSystem() {
   };
   
   const [calendarZoom, setCalendarZoom] = useState(1); // 0.5, 0.75, 1, 1.5, 2
-  const calendarHours = Array.from({ length: 24 }, (_, i) => i); // 0:00 - 23:00
+  const calendarHours = Array.from({ length: 17 }, (_, i) => i + 7); // 7:00 - 23:00
   const hourHeight = 60 * calendarZoom; // базовая высота часа * zoom
 
   // === ПРИВЫЧКИ ===
@@ -1669,17 +1669,10 @@ export default function BudgetSystem() {
             
             {/* Projects */}
             <div className="flex-1 overflow-auto p-3">
-              <div className="flex items-center justify-between mb-2">
-                <span className="text-xs font-semibold text-neutral-400 uppercase tracking-wide">Проекты</span>
-                <button onClick={() => { setNewProject({ name: '', color: 'blue', parentId: null }); setShowAddProject(true); }} className="p-1 hover:bg-neutral-100 rounded text-neutral-400 hover:text-neutral-600">
-                  <Plus size={14} />
-                </button>
-              </div>
-              
               {/* All Tasks */}
               <button
                 onClick={() => setSelectedProject('all')}
-                className={`w-full flex items-center gap-2 px-2 py-2 rounded-lg text-sm transition-colors mb-1 ${
+                className={`w-full flex items-center gap-2 px-2 py-2 rounded-lg text-sm transition-colors mb-2 ${
                   selectedProject === 'all' ? 'bg-blue-50 text-blue-600' : 'text-neutral-600 hover:bg-neutral-50'
                 }`}
               >
@@ -1688,109 +1681,170 @@ export default function BudgetSystem() {
                 <span className="ml-auto text-xs text-neutral-400">{(data?.calendarTasks || []).length}</span>
               </button>
               
-              {/* Financial events toggle */}
-              <div className="mb-3 mt-3 pt-3 border-t border-neutral-100">
-                <div className="text-xs font-semibold text-neutral-400 uppercase tracking-wide mb-2">Платежи</div>
-                <button
-                  onClick={() => setShowFinancialEvents(!showFinancialEvents)}
-                  className={`w-full flex items-center gap-2 px-2 py-2 rounded-lg text-sm transition-colors ${
-                    showFinancialEvents ? 'bg-emerald-50 text-emerald-600' : 'text-neutral-400 hover:bg-neutral-50'
-                  }`}
-                >
-                  <div className="flex gap-1">
-                    <div className="w-2 h-2 rounded-full bg-emerald-500" />
-                    <div className="w-2 h-2 rounded-full bg-rose-500" />
-                    <div className="w-2 h-2 rounded-full bg-amber-500" />
-                    <div className="w-2 h-2 rounded-full bg-violet-500" />
-                  </div>
-                  <span className="font-medium">Показать платежи</span>
-                  <div className={`ml-auto w-8 h-4 rounded-full transition-colors ${showFinancialEvents ? 'bg-emerald-500' : 'bg-neutral-300'}`}>
-                    <div className={`w-3 h-3 bg-white rounded-full shadow transition-transform mt-0.5 ${showFinancialEvents ? 'translate-x-4 ml-0.5' : 'ml-0.5'}`} />
-                  </div>
-                </button>
-                {showFinancialEvents && (
-                  <div className="mt-2 px-2 text-[10px] text-neutral-500 space-y-1">
-                    <div className="flex items-center gap-2"><div className="w-2 h-2 rounded-full bg-emerald-500" /> Приходы</div>
-                    <div className="flex items-center gap-2"><div className="w-2 h-2 rounded-full bg-rose-500" /> Кредиты</div>
-                    <div className="flex items-center gap-2"><div className="w-2 h-2 rounded-full bg-amber-500" /> Постоянные</div>
-                    <div className="flex items-center gap-2"><div className="w-2 h-2 rounded-full bg-violet-500" /> ФОТ</div>
-                  </div>
-                )}
+              {/* Projects Section */}
+              <div className="mb-3">
+                <div className="flex items-center justify-between mb-1">
+                  <span className="text-[10px] font-semibold text-neutral-400 uppercase tracking-wide">Проекты</span>
+                  <button onClick={() => { setNewProject({ name: '', color: 'blue', parentId: null }); setShowAddProject(true); }} className="p-0.5 hover:bg-neutral-100 rounded text-neutral-400 hover:text-neutral-600">
+                    <Plus size={12} />
+                  </button>
+                </div>
+                <div className="space-y-0.5">
+                  {(data?.calendarProjects || []).map(project => (
+                    <button
+                      key={project.id}
+                      onClick={() => setSelectedProject(project.id)}
+                      className={`w-full flex items-center gap-2 px-2 py-1.5 rounded text-xs transition-colors ${
+                        selectedProject === project.id ? 'bg-blue-50 text-blue-600' : 'text-neutral-600 hover:bg-neutral-50'
+                      }`}
+                    >
+                      <div className={`w-2 h-2 rounded-full ${TASK_COLORS[project.color]?.dot || 'bg-neutral-400'}`} />
+                      <span className="truncate">{project.name}</span>
+                      <span className="ml-auto text-[10px] text-neutral-400">
+                        {(data?.calendarTasks || []).filter(t => t.project === project.id).length}
+                      </span>
+                    </button>
+                  ))}
+                </div>
               </div>
               
-              {/* Project List */}
-              <div className="space-y-1">
-                {(data?.calendarProjects || []).map(project => (
-                  <div key={project.id} className="group/proj">
-                    <div className={`flex items-center gap-2 px-2 py-2 rounded-lg text-sm transition-colors ${
-                      selectedProject === project.id ? 'bg-blue-50 text-blue-600' : 'text-neutral-600 hover:bg-neutral-50'
-                    }`}>
-                      <button
-                        onClick={() => {
-                          if (project.subprojects?.length > 0) {
-                            toggleCalendarProject(project.id);
-                          }
-                          setSelectedProject(project.id);
-                        }}
-                        className="flex items-center gap-2 flex-1 min-w-0"
+              {/* Habits Section */}
+              <div className="mb-3 pt-2 border-t border-neutral-100">
+                <div className="flex items-center gap-1 mb-1">
+                  <Target size={12} className="text-neutral-400" />
+                  <span className="text-[10px] font-semibold text-neutral-400 uppercase tracking-wide">Привычки на сегодня</span>
+                </div>
+                <div className="space-y-1">
+                  {(data?.habits || []).filter(h => !h.archived).slice(0, 5).map(habit => {
+                    const group = (data?.habitGroups || []).find(g => g.id === habit.groupId);
+                    const isDone = isHabitCompleted(habit.id, today);
+                    return (
+                      <div
+                        key={habit.id}
+                        onClick={() => toggleHabit(habit.id, today)}
+                        className={`flex items-center gap-2 px-2 py-1.5 rounded text-xs cursor-pointer transition-colors ${
+                          isDone ? 'bg-emerald-50 text-emerald-600' : 'text-neutral-600 hover:bg-neutral-50'
+                        }`}
                       >
-                        {project.subprojects?.length > 0 && (
-                          <ChevronDown 
-                            size={14} 
-                            className={`text-neutral-400 transition-transform flex-shrink-0 ${expandedProjects.includes(project.id) ? '' : '-rotate-90'}`}
-                          />
-                        )}
-                        {!project.subprojects?.length && <div className="w-3.5 flex-shrink-0" />}
-                        <div className={`w-3 h-3 rounded-full flex-shrink-0 ${TASK_COLORS[project.color]?.dot || 'bg-neutral-400'}`} />
-                        <span className="font-medium truncate">{project.name}</span>
-                      </button>
-                      <span className="text-xs text-neutral-400 flex-shrink-0">
-                        {(data?.calendarTasks || []).filter(t => t.project === project.id || project.subprojects?.some(sp => sp.id === t.project)).length}
-                      </span>
-                      <button 
-                        onClick={(e) => { e.stopPropagation(); setNewProject({ name: '', color: 'blue', parentId: project.id }); setShowAddProject(true); }}
-                        className="p-1 hover:bg-blue-100 rounded opacity-0 group-hover/proj:opacity-100 flex-shrink-0"
-                        title="Добавить подпроект"
-                      >
-                        <Plus size={12} className="text-blue-500" />
-                      </button>
-                      <button 
-                        onClick={(e) => { e.stopPropagation(); if(confirm(`Удалить проект "${project.name}" и все его задачи?`)) removeCalendarProject(project.id); }}
-                        className="p-1 hover:bg-red-100 rounded opacity-0 group-hover/proj:opacity-100 flex-shrink-0"
-                      >
-                        <Trash2 size={12} className="text-red-400" />
-                      </button>
-                    </div>
-                    
-                    {/* Subprojects */}
-                    {expandedProjects.includes(project.id) && project.subprojects?.length > 0 && (
-                      <div className="ml-5 mt-1 space-y-1">
-                        {project.subprojects.map(sub => (
-                          <div
-                            key={sub.id}
-                            className={`group/sub flex items-center gap-2 px-2 py-1.5 rounded-lg text-sm transition-colors ${
-                              selectedProject === sub.id ? 'bg-blue-50 text-blue-600' : 'text-neutral-500 hover:bg-neutral-50'
-                            }`}
-                          >
-                            <button onClick={() => setSelectedProject(sub.id)} className="flex items-center gap-2 flex-1 min-w-0">
-                              <Hash size={12} className="text-neutral-400 flex-shrink-0" />
-                              <span className="truncate">{sub.name}</span>
-                            </button>
-                            <span className="text-xs text-neutral-400 flex-shrink-0">
-                              {(data?.calendarTasks || []).filter(t => t.project === sub.id).length}
-                            </span>
-                            <button 
-                              onClick={(e) => { e.stopPropagation(); if(confirm(`Удалить "${sub.name}"?`)) removeCalendarProject(sub.id, project.id); }}
-                              className="p-1 hover:bg-red-100 rounded opacity-0 group-hover/sub:opacity-100 flex-shrink-0"
-                            >
-                              <Trash2 size={12} className="text-red-400" />
-                            </button>
-                          </div>
-                        ))}
+                        <div className={`w-4 h-4 rounded border-2 flex items-center justify-center transition-all ${
+                          isDone 
+                            ? `${HABIT_COLORS[group?.color]?.fill || 'bg-emerald-500'} border-transparent` 
+                            : `border-neutral-300 hover:border-neutral-400`
+                        }`}>
+                          {isDone && <Check size={10} className="text-white" />}
+                        </div>
+                        <span className={`truncate ${isDone ? 'line-through opacity-60' : ''}`}>{habit.name}</span>
                       </div>
-                    )}
+                    );
+                  })}
+                  {(data?.habits || []).filter(h => !h.archived).length > 5 && (
+                    <div className="text-[10px] text-neutral-400 px-2">+{(data?.habits || []).filter(h => !h.archived).length - 5} ещё</div>
+                  )}
+                </div>
+              </div>
+              
+              {/* Financial Events - Draggable */}
+              <div className="pt-2 border-t border-neutral-100">
+                <div className="flex items-center justify-between mb-1">
+                  <div className="flex items-center gap-1">
+                    <span className="text-[10px] font-semibold text-neutral-400 uppercase tracking-wide">Платежи</span>
                   </div>
-                ))}
+                  <button
+                    onClick={() => setShowFinancialEvents(!showFinancialEvents)}
+                    className={`w-6 h-3 rounded-full transition-colors ${showFinancialEvents ? 'bg-emerald-500' : 'bg-neutral-300'}`}
+                  >
+                    <div className={`w-2 h-2 bg-white rounded-full shadow transition-transform mt-0.5 ${showFinancialEvents ? 'translate-x-3.5 ml-0.5' : 'ml-0.5'}`} />
+                  </button>
+                </div>
+                {showFinancialEvents && (
+                  <div className="space-y-1 max-h-48 overflow-auto">
+                    {/* Credits */}
+                    {(data?.credits || []).filter(c => !isCreditPaid(c.id)).map(credit => (
+                      <div
+                        key={`credit-${credit.id}`}
+                        draggable
+                        onDragStart={(e) => {
+                          e.dataTransfer.setData('payment', JSON.stringify({ type: 'credit', ...credit }));
+                        }}
+                        className="flex items-center gap-2 px-2 py-1.5 rounded text-xs bg-rose-50 text-rose-700 cursor-grab active:cursor-grabbing hover:bg-rose-100 transition-colors"
+                      >
+                        <span>💳</span>
+                        <span className="truncate flex-1">{credit.name}</span>
+                        <span className="text-[10px] font-medium">{credit.day}ч</span>
+                      </div>
+                    ))}
+                    {/* Recurring */}
+                    {recurringExpenses.filter(e => !isRecurringPaid(e.id)).map(expense => (
+                      <div
+                        key={`recurring-${expense.id}`}
+                        draggable
+                        onDragStart={(e) => {
+                          e.dataTransfer.setData('payment', JSON.stringify({ type: 'recurring', ...expense }));
+                        }}
+                        className="flex items-center gap-2 px-2 py-1.5 rounded text-xs bg-amber-50 text-amber-700 cursor-grab active:cursor-grabbing hover:bg-amber-100 transition-colors"
+                      >
+                        <span>🔄</span>
+                        <span className="truncate flex-1">{expense.name}</span>
+                        <span className="text-[10px] font-medium">{expense.day}ч</span>
+                      </div>
+                    ))}
+                    {/* Salaries */}
+                    {(() => {
+                      const salaryData = data?.salaries?.[selectedMonth] || {};
+                      const totalPay1 = Object.values(salaryData).reduce((s, e) => s + (Number(e.pay1) || 0), 0);
+                      const totalPay2 = Object.values(salaryData).reduce((s, e) => s + (Number(e.pay2) || 0), 0);
+                      const items = [];
+                      if (totalPay1 > 0) {
+                        items.push(
+                          <div
+                            key="fot-1"
+                            draggable
+                            onDragStart={(e) => {
+                              e.dataTransfer.setData('payment', JSON.stringify({ type: 'salary', payNum: 1, amount: totalPay1, day: data.fotSettings.payDay1 }));
+                            }}
+                            className="flex items-center gap-2 px-2 py-1.5 rounded text-xs bg-violet-50 text-violet-700 cursor-grab active:cursor-grabbing hover:bg-violet-100 transition-colors"
+                          >
+                            <span>👥</span>
+                            <span className="truncate flex-1">ФОТ (аванс)</span>
+                            <span className="text-[10px] font-medium">{data.fotSettings.payDay1}ч</span>
+                          </div>
+                        );
+                      }
+                      if (totalPay2 > 0) {
+                        items.push(
+                          <div
+                            key="fot-2"
+                            draggable
+                            onDragStart={(e) => {
+                              e.dataTransfer.setData('payment', JSON.stringify({ type: 'salary', payNum: 2, amount: totalPay2, day: data.fotSettings.payDay2 }));
+                            }}
+                            className="flex items-center gap-2 px-2 py-1.5 rounded text-xs bg-violet-50 text-violet-700 cursor-grab active:cursor-grabbing hover:bg-violet-100 transition-colors"
+                          >
+                            <span>👥</span>
+                            <span className="truncate flex-1">ФОТ (зп)</span>
+                            <span className="text-[10px] font-medium">{data.fotSettings.payDay2}ч</span>
+                          </div>
+                        );
+                      }
+                      return items;
+                    })()}
+                    {/* Debts */}
+                    {(md.debts || []).map(debt => (
+                      <div
+                        key={`debt-${debt.id}`}
+                        draggable
+                        onDragStart={(e) => {
+                          e.dataTransfer.setData('payment', JSON.stringify({ type: 'debt', ...debt }));
+                        }}
+                        className="flex items-center gap-2 px-2 py-1.5 rounded text-xs bg-red-50 text-red-700 cursor-grab active:cursor-grabbing hover:bg-red-100 transition-colors"
+                      >
+                        <span>📋</span>
+                        <span className="truncate flex-1">{debt.name}</span>
+                        <span className="text-[10px] font-medium">{debt.day}ч</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
             </div>
             
