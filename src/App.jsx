@@ -619,9 +619,74 @@ export default function BudgetSystem() {
   const isTodayCal = (date) => fmtDateCal(date) === fmtDateCal(today);
   const isSelectedCal = (date) => fmtDateCal(date) === fmtDateCal(calendarDate);
   const [draggedTask, setDraggedTask] = useState(null);
+  const [resizingTask, setResizingTask] = useState(null);
+  const [resizeStartY, setResizeStartY] = useState(0);
+  const [resizeStartDuration, setResizeStartDuration] = useState(0);
   const [showAddProject, setShowAddProject] = useState(false);
   const [newProject, setNewProject] = useState({ name: '', color: 'blue', parentId: null });
   const [editingTask, setEditingTask] = useState(null);
+  
+  // Клик на пустую ячейку - создать задачу
+  const handleCellClick = (date, hour = 10) => {
+    const dateStr = fmtDateCal(date);
+    setNewTask({
+      title: '',
+      date: dateStr,
+      time: `${String(hour).padStart(2, '0')}:00`,
+      endTime: `${String(hour + 1).padStart(2, '0')}:00`,
+      duration: 60,
+      color: 'blue',
+      type: 'executor',
+      assignee: null,
+      project: selectedProject !== 'all' ? selectedProject : ''
+    });
+    setShowAddTask(true);
+  };
+  
+  // Resize handlers
+  const handleResizeStart = (e, task) => {
+    e.stopPropagation();
+    e.preventDefault();
+    setResizingTask(task);
+    setResizeStartY(e.clientY);
+    setResizeStartDuration(task.duration || 60);
+  };
+  
+  const handleResizeMove = (e) => {
+    if (!resizingTask) return;
+    const deltaY = e.clientY - resizeStartY;
+    const deltaMinutes = Math.round(deltaY / 60 * 60 / 15) * 15; // snap to 15 min
+    const newDuration = Math.max(15, Math.min(480, resizeStartDuration + deltaMinutes)); // 15min - 8hours
+    
+    const startHour = parseInt(resizingTask.time.split(':')[0]);
+    const startMin = parseInt(resizingTask.time.split(':')[1]);
+    const endTotalMin = startHour * 60 + startMin + newDuration;
+    const endHour = Math.floor(endTotalMin / 60);
+    const endMin = endTotalMin % 60;
+    
+    updateCalendarTask(resizingTask.id, {
+      duration: newDuration,
+      endTime: `${String(endHour).padStart(2, '0')}:${String(endMin).padStart(2, '0')}`
+    });
+  };
+  
+  const handleResizeEnd = () => {
+    setResizingTask(null);
+  };
+  
+  // Global mouse handlers for resize
+  useEffect(() => {
+    if (resizingTask) {
+      const handleMove = (e) => handleResizeMove(e);
+      const handleUp = () => handleResizeEnd();
+      document.addEventListener('mousemove', handleMove);
+      document.addEventListener('mouseup', handleUp);
+      return () => {
+        document.removeEventListener('mousemove', handleMove);
+        document.removeEventListener('mouseup', handleUp);
+      };
+    }
+  }, [resizingTask, resizeStartY, resizeStartDuration]);
   
   const getCalendarMonthDays = () => {
     const year = calendarDate.getFullYear();
@@ -657,6 +722,102 @@ export default function BudgetSystem() {
       return d;
     });
   };
+  
+  // Получить финансовые события на дату
+  const getFinancialEventsForDate = (date) => {
+    const day = date.getDate();
+    const monthKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+    const events = [];
+    
+    // Кредиты
+    (data?.credits || []).forEach(credit => {
+      if (credit.day === day) {
+        const isPaid = (data?.dds?.[monthKey] || []).some(d => d.type === 'credit' && d.creditId === credit.id);
+        events.push({
+          id: `credit-${credit.id}-${monthKey}`,
+          title: credit.name,
+          amount: credit.monthlyPayment,
+          type: 'credit',
+          color: 'rose',
+          icon: '💳',
+          isPaid
+        });
+      }
+    });
+    
+    // Постоянные расходы
+    (data?.recurringExpenses || []).forEach(expense => {
+      if (expense.day === day) {
+        const isPaid = (data?.dds?.[monthKey] || []).some(d => d.type === 'recurring' && d.recurringId === expense.id);
+        events.push({
+          id: `recurring-${expense.id}-${monthKey}`,
+          title: expense.name,
+          amount: expense.amount,
+          type: 'recurring',
+          color: 'amber',
+          icon: '🔄',
+          isPaid
+        });
+      }
+    });
+    
+    // ФОТ
+    const fotSettings = data?.fotSettings || { payDay1: 5, payDay2: 20 };
+    if (day === fotSettings.payDay1 || day === fotSettings.payDay2) {
+      const salaryData = data?.salaries?.[monthKey] || {};
+      const payKey = day === fotSettings.payDay1 ? 'pay1' : 'pay2';
+      const totalSalary = Object.values(salaryData).reduce((sum, emp) => sum + (Number(emp[payKey]) || 0), 0);
+      if (totalSalary > 0) {
+        const isPaid = (data?.dds?.[monthKey] || []).some(d => d.type === 'salary' && d.day === day);
+        events.push({
+          id: `fot-${payKey}-${monthKey}`,
+          title: `ФОТ ${day === fotSettings.payDay1 ? '(аванс)' : '(зп)'}`,
+          amount: totalSalary,
+          type: 'salary',
+          color: 'violet',
+          icon: '👥',
+          isPaid
+        });
+      }
+    }
+    
+    // Приходы из бюджета
+    const monthData = data?.months?.[monthKey] || {};
+    (monthData.income || []).forEach(income => {
+      if (income.day === day) {
+        const isPaid = (data?.dds?.[monthKey] || []).some(d => d.type === 'income' && d.incomeId === income.id);
+        events.push({
+          id: `income-${income.id}-${monthKey}`,
+          title: income.name,
+          amount: income.amount,
+          type: 'income',
+          color: 'green',
+          icon: '💰',
+          isPaid
+        });
+      }
+    });
+    
+    // Долги
+    (monthData.debts || []).forEach(debt => {
+      if (debt.day === day) {
+        const isPaid = (data?.dds?.[monthKey] || []).some(d => d.type === 'debt' && d.debtId === debt.id);
+        events.push({
+          id: `debt-${debt.id}-${monthKey}`,
+          title: debt.name,
+          amount: debt.amount,
+          type: 'debt',
+          color: 'red',
+          icon: '📋',
+          isPaid
+        });
+      }
+    });
+    
+    return events;
+  };
+  
+  const [showFinancialEvents, setShowFinancialEvents] = useState(true);
   
   const getTasksForDate = (date) => {
     const dateStr = fmtDateCal(date);
@@ -1510,6 +1671,36 @@ export default function BudgetSystem() {
                 <span className="font-medium">Все события</span>
                 <span className="ml-auto text-xs text-neutral-400">{(data?.calendarTasks || []).length}</span>
               </button>
+              
+              {/* Financial events toggle */}
+              <div className="mb-3 mt-3 pt-3 border-t border-neutral-100">
+                <div className="text-xs font-semibold text-neutral-400 uppercase tracking-wide mb-2">Платежи</div>
+                <button
+                  onClick={() => setShowFinancialEvents(!showFinancialEvents)}
+                  className={`w-full flex items-center gap-2 px-2 py-2 rounded-lg text-sm transition-colors ${
+                    showFinancialEvents ? 'bg-emerald-50 text-emerald-600' : 'text-neutral-400 hover:bg-neutral-50'
+                  }`}
+                >
+                  <div className="flex gap-1">
+                    <div className="w-2 h-2 rounded-full bg-emerald-500" />
+                    <div className="w-2 h-2 rounded-full bg-rose-500" />
+                    <div className="w-2 h-2 rounded-full bg-amber-500" />
+                    <div className="w-2 h-2 rounded-full bg-violet-500" />
+                  </div>
+                  <span className="font-medium">Показать платежи</span>
+                  <div className={`ml-auto w-8 h-4 rounded-full transition-colors ${showFinancialEvents ? 'bg-emerald-500' : 'bg-neutral-300'}`}>
+                    <div className={`w-3 h-3 bg-white rounded-full shadow transition-transform mt-0.5 ${showFinancialEvents ? 'translate-x-4 ml-0.5' : 'ml-0.5'}`} />
+                  </div>
+                </button>
+                {showFinancialEvents && (
+                  <div className="mt-2 px-2 text-[10px] text-neutral-500 space-y-1">
+                    <div className="flex items-center gap-2"><div className="w-2 h-2 rounded-full bg-emerald-500" /> Приходы</div>
+                    <div className="flex items-center gap-2"><div className="w-2 h-2 rounded-full bg-rose-500" /> Кредиты</div>
+                    <div className="flex items-center gap-2"><div className="w-2 h-2 rounded-full bg-amber-500" /> Постоянные</div>
+                    <div className="flex items-center gap-2"><div className="w-2 h-2 rounded-full bg-violet-500" /> ФОТ</div>
+                  </div>
+                )}
+              </div>
               
               {/* Project List */}
               <div className="space-y-1">
@@ -2721,35 +2912,44 @@ export default function BudgetSystem() {
                         return (
                           <div 
                             key={dayIndex}
+                            onClick={(e) => { if (e.target === e.currentTarget) handleCellClick(day, hour); }}
                             onDragOver={handleTaskDragOver}
                             onDrop={(e) => handleTaskDrop(e, day, hour)}
-                            className={`min-h-[60px] border-r border-neutral-100 last:border-0 relative ${isTodayCal(day) ? 'bg-blue-50/30' : ''} ${draggedTask ? 'hover:bg-blue-50' : ''}`}
+                            className={`min-h-[60px] border-r border-neutral-100 last:border-0 relative cursor-pointer hover:bg-blue-50/50 ${isTodayCal(day) ? 'bg-blue-50/30' : ''} ${draggedTask ? 'hover:bg-blue-100' : ''}`}
                           >
                             {dayTasks.map(task => {
-                              const startMinute = parseInt(task.time.split(':')[1]);
-                              const TypeIcon = TASK_TYPES[task.type].icon;
+                              const startMinute = parseInt(task.time.split(':')[1]) || 0;
+                              const TypeIcon = TASK_TYPES[task.type]?.icon || User;
+                              const taskHeight = Math.max(((task.duration || 60) / 60) * 60 - 4, 24);
                               return (
                                 <div
                                   key={task.id}
-                                  draggable
+                                  draggable={!resizingTask}
                                   onDragStart={(e) => handleTaskDragStart(e, task)}
                                   onDragEnd={() => setDraggedTask(null)}
-                                  onClick={() => setEditingTask(task)}
-                                  className={`absolute left-1 right-1 px-2 py-1 rounded-lg ${TASK_COLORS[task.color]?.bg || 'bg-blue-500'} text-white text-xs cursor-grab active:cursor-grabbing hover:opacity-90 transition-opacity shadow-sm ${draggedTask?.id === task.id ? 'opacity-50' : ''}`}
+                                  onClick={(e) => { e.stopPropagation(); setEditingTask(task); }}
+                                  className={`absolute left-1 right-1 px-2 py-1 rounded-lg ${TASK_COLORS[task.color]?.bg || 'bg-blue-500'} text-white text-xs cursor-grab active:cursor-grabbing hover:opacity-95 transition-opacity shadow-sm group ${draggedTask?.id === task.id ? 'opacity-50' : ''} ${resizingTask?.id === task.id ? 'ring-2 ring-white cursor-ns-resize' : ''}`}
                                   style={{
                                     top: `${(startMinute / 60) * 60 + 2}px`,
-                                    height: `${Math.max((task.duration / 60) * 60 - 4, 24)}px`,
+                                    height: `${taskHeight}px`,
                                   }}
                                 >
-                                  <div className="flex items-center gap-1">
-                                    <TypeIcon size={10} />
+                                  <div className="flex items-center gap-1 overflow-hidden">
+                                    <TypeIcon size={10} className="flex-shrink-0" />
                                     <span className="font-medium truncate">{task.title}</span>
                                   </div>
-                                  {task.duration >= 45 && (
+                                  {(task.duration || 60) >= 45 && (
                                     <div className="text-white/80 text-[10px] mt-0.5">
                                       {task.time} - {task.endTime}
                                     </div>
                                   )}
+                                  {/* Resize handle */}
+                                  <div
+                                    onMouseDown={(e) => handleResizeStart(e, task)}
+                                    className="absolute bottom-0 left-0 right-0 h-2 cursor-ns-resize hover:bg-white/30 rounded-b-lg opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center"
+                                  >
+                                    <div className="w-8 h-1 bg-white/50 rounded-full" />
+                                  </div>
                                 </div>
                               );
                             })}
@@ -2765,6 +2965,17 @@ export default function BudgetSystem() {
             {/* Month View */}
             {calendarView === 'month' && (
               <div className="bg-white rounded-xl border border-neutral-200 overflow-hidden">
+                {/* Toggle for financial events */}
+                <div className="px-4 py-2 border-b border-neutral-100 flex items-center justify-between bg-neutral-50">
+                  <span className="text-sm text-neutral-600">Показывать платежи</span>
+                  <button
+                    onClick={() => setShowFinancialEvents(!showFinancialEvents)}
+                    className={`w-10 h-6 rounded-full transition-colors ${showFinancialEvents ? 'bg-blue-500' : 'bg-neutral-300'}`}
+                  >
+                    <div className={`w-4 h-4 bg-white rounded-full shadow transition-transform mx-1 ${showFinancialEvents ? 'translate-x-4' : ''}`} />
+                  </button>
+                </div>
+                
                 <div className="grid grid-cols-7 border-b border-neutral-200">
                   {DAYS_SHORT.map(d => (
                     <div key={d} className="p-3 text-center text-sm font-medium text-neutral-500 border-r border-neutral-100 last:border-0">
@@ -2776,24 +2987,44 @@ export default function BudgetSystem() {
                 <div className="grid grid-cols-7">
                   {getCalendarMonthDays().map((day, i) => {
                     const dayTasks = getTasksForDate(day.date);
+                    const financialEvents = showFinancialEvents ? getFinancialEventsForDate(day.date) : [];
+                    const allItems = [...dayTasks, ...financialEvents];
+                    
                     return (
                       <div
                         key={i}
-                        onClick={() => { setCalendarDate(day.date); setCalendarView('day'); }}
+                        onClick={(e) => { 
+                          if (e.target === e.currentTarget || e.target.closest('.day-number')) {
+                            handleCellClick(day.date);
+                          }
+                        }}
+                        onDoubleClick={() => { setCalendarDate(day.date); setCalendarView('day'); }}
                         onDragOver={handleTaskDragOver}
                         onDrop={(e) => { e.stopPropagation(); handleTaskDrop(e, day.date); }}
-                        className={`min-h-[100px] p-2 border-r border-b border-neutral-100 cursor-pointer hover:bg-neutral-50 transition-colors ${
+                        className={`min-h-[100px] p-1.5 border-r border-b border-neutral-100 cursor-pointer hover:bg-neutral-50 transition-colors ${
                           !day.isCurrentMonth ? 'bg-neutral-50' : ''
                         } ${isSelectedCal(day.date) ? 'bg-blue-50' : ''} ${draggedTask ? 'hover:ring-2 hover:ring-inset hover:ring-blue-300' : ''}`}
                       >
-                        <div className={`w-7 h-7 flex items-center justify-center rounded-full text-sm mb-1 ${
-                          isTodayCal(day.date) ? 'bg-blue-500 text-white font-bold' :
-                          day.isCurrentMonth ? 'text-neutral-800' : 'text-neutral-400'
-                        }`}>
-                          {day.date.getDate()}
+                        <div className="flex items-center justify-between mb-1">
+                          <div className={`day-number w-6 h-6 flex items-center justify-center rounded-full text-xs ${
+                            isTodayCal(day.date) ? 'bg-blue-500 text-white font-bold' :
+                            day.isCurrentMonth ? 'text-neutral-800' : 'text-neutral-400'
+                          }`}>
+                            {day.date.getDate()}
+                          </div>
+                          {/* Financial indicators */}
+                          {financialEvents.length > 0 && (
+                            <div className="flex gap-0.5">
+                              {financialEvents.some(e => e.type === 'income') && <div className="w-2 h-2 rounded-full bg-emerald-500" title="Приход" />}
+                              {financialEvents.some(e => e.type === 'credit') && <div className="w-2 h-2 rounded-full bg-rose-500" title="Кредит" />}
+                              {financialEvents.some(e => e.type === 'recurring') && <div className="w-2 h-2 rounded-full bg-amber-500" title="Пост. расход" />}
+                              {financialEvents.some(e => e.type === 'salary') && <div className="w-2 h-2 rounded-full bg-violet-500" title="ФОТ" />}
+                            </div>
+                          )}
                         </div>
-                        <div className="space-y-1">
-                          {dayTasks.slice(0, 2).map(task => {
+                        <div className="space-y-0.5">
+                          {/* Tasks */}
+                          {dayTasks.slice(0, 1).map(task => {
                             const TypeIcon = TASK_TYPES[task.type]?.icon || User;
                             return (
                               <div
@@ -2802,15 +3033,34 @@ export default function BudgetSystem() {
                                 onDragStart={(e) => { e.stopPropagation(); handleTaskDragStart(e, task); }}
                                 onDragEnd={() => setDraggedTask(null)}
                                 onClick={(e) => { e.stopPropagation(); setEditingTask(task); }}
-                                className={`px-1.5 py-0.5 rounded text-xs ${TASK_COLORS[task.color]?.light || 'bg-blue-100'} ${TASK_COLORS[task.color]?.text || 'text-blue-600'} truncate flex items-center gap-1 cursor-grab active:cursor-grabbing ${draggedTask?.id === task.id ? 'opacity-50' : ''}`}
+                                className={`px-1 py-0.5 rounded text-[10px] ${TASK_COLORS[task.color]?.light || 'bg-blue-100'} ${TASK_COLORS[task.color]?.text || 'text-blue-600'} truncate flex items-center gap-0.5 cursor-grab`}
                               >
-                                <TypeIcon size={10} />
-                                {task.title}
+                                <TypeIcon size={8} />
+                                <span className="truncate">{task.title}</span>
                               </div>
                             );
                           })}
-                          {dayTasks.length > 2 && (
-                            <div className="text-xs text-neutral-400 px-1">+{dayTasks.length - 2}</div>
+                          {/* Financial events */}
+                          {financialEvents.slice(0, 2).map(event => (
+                            <div
+                              key={event.id}
+                              onClick={(e) => e.stopPropagation()}
+                              className={`px-1 py-0.5 rounded text-[10px] flex items-center gap-0.5 ${
+                                event.isPaid ? 'opacity-50 line-through' : ''
+                              } ${
+                                event.type === 'income' ? 'bg-emerald-100 text-emerald-700' :
+                                event.type === 'credit' ? 'bg-rose-100 text-rose-700' :
+                                event.type === 'recurring' ? 'bg-amber-100 text-amber-700' :
+                                event.type === 'salary' ? 'bg-violet-100 text-violet-700' :
+                                'bg-red-100 text-red-700'
+                              }`}
+                            >
+                              <span>{event.icon}</span>
+                              <span className="truncate">{event.title}</span>
+                            </div>
+                          ))}
+                          {allItems.length > 3 && (
+                            <div className="text-[10px] text-neutral-400 px-1">+{allItems.length - 3}</div>
                           )}
                         </div>
                       </div>
@@ -2828,7 +3078,7 @@ export default function BudgetSystem() {
                     <h2 className="text-lg font-semibold text-neutral-800">
                       {DAYS_FULL[(calendarDate.getDay() + 6) % 7]}, {calendarDate.getDate()} {MONTHS[calendarDate.getMonth()]}
                     </h2>
-                    <p className="text-sm text-neutral-500">{getTasksForDate(calendarDate).length} событий</p>
+                    <p className="text-sm text-neutral-500">{getTasksForDate(calendarDate).length} задач, {getFinancialEventsForDate(calendarDate).length} платежей</p>
                   </div>
                   <button 
                     onClick={() => setShowAddTask(true)}
@@ -2837,6 +3087,35 @@ export default function BudgetSystem() {
                     <Plus size={20} className="text-white" />
                   </button>
                 </div>
+                
+                {/* Financial events at top of day */}
+                {getFinancialEventsForDate(calendarDate).length > 0 && (
+                  <div className="p-3 border-b border-neutral-200 bg-gradient-to-r from-neutral-50 to-white">
+                    <div className="text-xs font-semibold text-neutral-500 mb-2">💰 Платежи на этот день</div>
+                    <div className="flex flex-wrap gap-2">
+                      {getFinancialEventsForDate(calendarDate).map(event => (
+                        <div
+                          key={event.id}
+                          className={`px-3 py-1.5 rounded-lg text-sm flex items-center gap-2 ${
+                            event.isPaid ? 'opacity-50' : ''
+                          } ${
+                            event.type === 'income' ? 'bg-emerald-100 text-emerald-700' :
+                            event.type === 'credit' ? 'bg-rose-100 text-rose-700' :
+                            event.type === 'recurring' ? 'bg-amber-100 text-amber-700' :
+                            event.type === 'salary' ? 'bg-violet-100 text-violet-700' :
+                            'bg-red-100 text-red-700'
+                          }`}
+                        >
+                          <span>{event.icon}</span>
+                          <span className={event.isPaid ? 'line-through' : ''}>{event.title}</span>
+                          <span className="font-semibold">{fmt(event.amount)}</span>
+                          {event.isPaid && <Check size={14} className="text-emerald-500" />}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                
                 <div className="max-h-[500px] overflow-auto">
                   {calendarHours.map(hour => {
                     const hourTasks = getTasksForDate(calendarDate).filter(t => parseInt(t.time.split(':')[0]) === hour);
