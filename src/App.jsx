@@ -321,9 +321,20 @@ export default function BudgetSystem() {
   };
 
   const save = async (newData) => {
-    setData(newData);
-    try { await storage.set(STORAGE_KEY, JSON.stringify(newData)); } catch (e) {}
+    // Создаём глубокую копию чтобы гарантировать ререндер
+    const dataCopy = JSON.parse(JSON.stringify(newData));
+    setData(dataCopy);
+    setSaveStatus('saving');
+    try { 
+      await storage.set(STORAGE_KEY, JSON.stringify(dataCopy)); 
+      setSaveStatus('saved');
+      setTimeout(() => setSaveStatus(''), 2000);
+    } catch (e) {
+      setSaveStatus('error');
+    }
   };
+
+  const [saveStatus, setSaveStatus] = useState(''); // 'saving' | 'saved' | 'error' | ''
 
   const fmt = (n) => new Intl.NumberFormat('ru-RU').format(n) + ' ₽';
   const fmtShort = (n) => new Intl.NumberFormat('ru-RU').format(n);
@@ -868,11 +879,10 @@ export default function BudgetSystem() {
       }
     }
     
-    // Приходы из бюджета
+    // Приходы из бюджета (НЕ из ДДС)
     const monthData = data?.months?.[monthKey] || {};
     (monthData.income || []).forEach(income => {
       if (income.day === day) {
-        const isPaid = (data?.dds?.[monthKey] || []).some(d => d.type === 'income' && d.incomeId === income.id);
         events.push({
           id: `income-${income.id}-${monthKey}`,
           title: income.name,
@@ -880,15 +890,14 @@ export default function BudgetSystem() {
           type: 'income',
           color: 'green',
           icon: '💰',
-          isPaid
+          isPaid: false
         });
       }
     });
     
-    // Долги
+    // Долги из бюджета (НЕ из ДДС)
     (monthData.debts || []).forEach(debt => {
       if (debt.day === day) {
-        const isPaid = (data?.dds?.[monthKey] || []).some(d => d.type === 'debt' && d.debtId === debt.id);
         events.push({
           id: `debt-${debt.id}-${monthKey}`,
           title: debt.name,
@@ -896,7 +905,7 @@ export default function BudgetSystem() {
           type: 'debt',
           color: 'red',
           icon: '📋',
-          isPaid
+          isPaid: false
         });
       }
     });
@@ -1672,6 +1681,18 @@ export default function BudgetSystem() {
               <span className="text-white font-bold text-sm">B</span>
             </div>
             <span className="font-semibold text-neutral-800">Budget App</span>
+            {/* Save indicator */}
+            {saveStatus && (
+              <span className={`text-xs px-2 py-0.5 rounded-full ${
+                saveStatus === 'saving' ? 'bg-yellow-100 text-yellow-600' :
+                saveStatus === 'saved' ? 'bg-emerald-100 text-emerald-600' :
+                'bg-red-100 text-red-600'
+              }`}>
+                {saveStatus === 'saving' ? '💾 Сохранение...' : 
+                 saveStatus === 'saved' ? '✓ Сохранено' : 
+                 '⚠️ Ошибка'}
+              </span>
+            )}
           </div>
           
           {/* Main Tabs */}
