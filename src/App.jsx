@@ -167,6 +167,7 @@ const defaultData = {
   habitGroups: [
     { id: 1, name: 'Здоровье', color: 'emerald' },
     { id: 2, name: 'Продуктивность', color: 'blue' },
+    { id: 3, name: 'Добавки', color: 'amber', isSystem: true },
   ],
   habits: [
     { id: 1, name: 'Зарядка', groupId: 1, createdAt: '2026-03-01' },
@@ -254,6 +255,8 @@ export default function BudgetSystem() {
         let loadedData = JSON.parse(result.value);
         // Автоматически переносим просроченные долги на сегодня
         loadedData = moveOverdueDebtsToToday(loadedData);
+        // Добавляем группу "Добавки" если её нет
+        loadedData = ensureSupplementsGroup(loadedData);
         setData(loadedData);
         await storage.set(STORAGE_KEY, JSON.stringify(loadedData));
       } else {
@@ -262,6 +265,17 @@ export default function BudgetSystem() {
       }
     } catch (e) { setData(defaultData); }
     setLoading(false);
+  };
+
+  // Добавляет группу "Добавки" если её нет
+  const ensureSupplementsGroup = (inputData) => {
+    const newData = { ...inputData };
+    if (!newData.habitGroups) newData.habitGroups = [];
+    const hasSupplements = newData.habitGroups.some(g => g.name === 'Добавки' || g.isSystem);
+    if (!hasSupplements) {
+      newData.habitGroups.push({ id: Date.now(), name: 'Добавки', color: 'amber', isSystem: true });
+    }
+    return newData;
   };
 
   // Переносит просроченные долги на текущий день
@@ -1139,8 +1153,9 @@ export default function BudgetSystem() {
   const [habitView, setHabitView] = useState('week');
   const [showAddHabit, setShowAddHabit] = useState(false);
   const [showAddHabitGroup, setShowAddHabitGroup] = useState(false);
-  const [newHabit, setNewHabit] = useState({ name: '', groupId: null, courseDays: null });
+  const [newHabit, setNewHabit] = useState({ name: '', groupId: null, courseDays: null, times: [] });
   const [newHabitGroup, setNewHabitGroup] = useState({ name: '', color: 'emerald' });
+  const [editingHabit, setEditingHabit] = useState(null);
   const [editingGroup, setEditingGroup] = useState(null);
   const [quote, setQuote] = useState('Каждый день — новая возможность стать лучше.');
   const [quoteLoading, setQuoteLoading] = useState(false);
@@ -1245,10 +1260,11 @@ export default function BudgetSystem() {
       groupId: newHabit.groupId || data.habitGroups?.[0]?.id, 
       createdAt: todayKey, 
       archived: false,
-      courseDays: newHabit.courseDays || null
+      courseDays: newHabit.courseDays || null,
+      times: newHabit.times || []
     });
     save(newData);
-    setNewHabit({ name: '', groupId: null, courseDays: null });
+    setNewHabit({ name: '', groupId: null, courseDays: null, times: [] });
     setShowAddHabit(false);
   };
 
@@ -1259,6 +1275,11 @@ export default function BudgetSystem() {
 
   const unarchiveHabit = (id) => {
     const newData = { ...data, habits: data.habits.map(h => h.id === id ? { ...h, archived: false, archivedAt: null } : h) };
+    save(newData);
+  };
+
+  const updateHabit = (id, updates) => {
+    const newData = { ...data, habits: data.habits.map(h => h.id === id ? { ...h, ...updates } : h) };
     save(newData);
   };
 
@@ -1550,19 +1571,15 @@ export default function BudgetSystem() {
           />
         </div>
         <div className="flex items-center gap-1 mt-0.5">
-          {type === 'debts' ? (
-            <select
-              value={item.day}
-              onChange={(e) => onUpdate('day', parseInt(e.target.value))}
-              className="text-xs text-neutral-500 bg-transparent hover:bg-neutral-100 rounded px-1 py-0.5 cursor-pointer focus:outline-none focus:ring-1 focus:ring-blue-300"
-            >
-              {Array.from({ length: 31 }, (_, i) => i + 1).map(d => (
-                <option key={d} value={d}>{d} {MONTHS_SHORT[month - 1]}</option>
-              ))}
-            </select>
-          ) : (
-            <span className="text-xs text-neutral-400">{item.day} {MONTHS_SHORT[month - 1]}</span>
-          )}
+          <select
+            value={item.day}
+            onChange={(e) => onUpdate('day', parseInt(e.target.value))}
+            className="text-xs text-neutral-500 bg-transparent hover:bg-neutral-100 rounded px-1 py-0.5 cursor-pointer focus:outline-none focus:ring-1 focus:ring-blue-300"
+          >
+            {Array.from({ length: 31 }, (_, i) => i + 1).map(d => (
+              <option key={d} value={d}>{d} {MONTHS_SHORT[month - 1]}</option>
+            ))}
+          </select>
         </div>
       </div>
       <EditableInput 
@@ -2698,8 +2715,19 @@ export default function BudgetSystem() {
                               <td className="p-2 sm:p-3">
                                 <div className="flex items-center gap-1 sm:gap-2">
                                   <GripVertical size={12} className="text-neutral-300 group-hover/row:text-neutral-400 flex-shrink-0 cursor-grab sm:w-[14px] sm:h-[14px]" />
-                                  <span className="text-xs sm:text-sm text-neutral-700 truncate">{habit.name}</span>
+                                  <div className="flex flex-col min-w-0">
+                                    <span className="text-xs sm:text-sm text-neutral-700 truncate">{habit.name}</span>
+                                    {habit.times && habit.times.length > 0 && (
+                                      <span className="text-[10px] text-neutral-400">{habit.times.join(', ')}</span>
+                                    )}
+                                    {habit.courseDays && (
+                                      <span className="text-[10px] text-amber-500">курс {habit.courseDays}д</span>
+                                    )}
+                                  </div>
                                   <div className="hidden sm:flex opacity-0 group-hover/row:opacity-100 items-center gap-1 ml-auto">
+                                    <button onClick={() => setEditingHabit(habit)} className="p-1 hover:bg-blue-100 rounded" title="Редактировать">
+                                      <Edit3 size={12} className="text-blue-500" />
+                                    </button>
                                     <button onClick={() => archiveHabit(habit.id)} className="p-1 hover:bg-amber-100 rounded" title="В архив (история сохранится)">
                                       <Archive size={12} className="text-amber-500" />
                                     </button>
@@ -3467,33 +3495,49 @@ export default function BudgetSystem() {
         {/* Add Habit Modal */}
         {showAddHabit && (
           <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
-            <div className="bg-white rounded-2xl w-full max-w-sm p-4">
+            <div className="bg-white rounded-2xl w-full max-w-sm p-4 max-h-[90vh] overflow-y-auto">
               <div className="flex justify-between mb-4"><h2 className="text-lg font-semibold">Новая привычка</h2><button onClick={() => setShowAddHabit(false)}><X size={20} className="text-neutral-400" /></button></div>
               <input value={newHabit.name} onChange={e => setNewHabit({ ...newHabit, name: e.target.value })} placeholder="Название" className="w-full px-3 py-2 rounded-lg border mb-3" autoFocus />
               
-              <div className="text-sm text-neutral-500 mb-2">Курс (дней)</div>
-              <div className="flex gap-2 mb-3">
-                {[null, 7, 14, 30, 60, 90].map(days => (
-                  <button
-                    key={days || 'forever'}
-                    onClick={() => setNewHabit({ ...newHabit, courseDays: days })}
-                    className={`px-3 py-1.5 rounded-lg text-sm ${
-                      newHabit.courseDays === days 
-                        ? 'bg-blue-500 text-white' 
-                        : 'bg-neutral-100 text-neutral-600 hover:bg-neutral-200'
-                    }`}
-                  >
-                    {days ? `${days}д` : '∞'}
-                  </button>
+              <div className="text-sm text-neutral-500 mb-2">Курс (дней, пусто = бессрочно)</div>
+              <input
+                type="number"
+                value={newHabit.courseDays || ''}
+                onChange={e => setNewHabit({ ...newHabit, courseDays: e.target.value ? parseInt(e.target.value) : null })}
+                placeholder="∞"
+                className="w-full px-3 py-2 rounded-lg border text-sm mb-3"
+              />
+              
+              <div className="text-sm text-neutral-500 mb-2">Время приёма</div>
+              <div className="flex flex-wrap gap-2 mb-2">
+                {(newHabit.times || []).map((time, idx) => (
+                  <div key={idx} className="flex items-center gap-1 bg-blue-100 text-blue-700 px-2 py-1 rounded-lg text-sm">
+                    <input
+                      type="text"
+                      value={time}
+                      onChange={e => {
+                        const newTimes = [...newHabit.times];
+                        newTimes[idx] = e.target.value;
+                        setNewHabit({ ...newHabit, times: newTimes });
+                      }}
+                      placeholder="утром"
+                      className="bg-transparent border-none text-sm w-20 outline-none"
+                    />
+                    <button 
+                      onClick={() => setNewHabit({ ...newHabit, times: newHabit.times.filter((_, i) => i !== idx) })}
+                      className="text-blue-400 hover:text-blue-600"
+                    >
+                      <X size={14} />
+                    </button>
+                  </div>
                 ))}
-                <input
-                  type="number"
-                  value={newHabit.courseDays || ''}
-                  onChange={e => setNewHabit({ ...newHabit, courseDays: e.target.value ? parseInt(e.target.value) : null })}
-                  placeholder="Др."
-                  className="w-16 px-2 py-1.5 rounded-lg border text-sm text-center"
-                />
               </div>
+              <button 
+                onClick={() => setNewHabit({ ...newHabit, times: [...(newHabit.times || []), ''] })}
+                className="text-sm text-blue-500 hover:text-blue-600 mb-3 flex items-center gap-1"
+              >
+                <Plus size={14} /> Добавить время
+              </button>
               
               <div className="text-sm text-neutral-500 mb-2">Группа</div>
               <div className="flex flex-wrap gap-2 mb-4">
@@ -3502,6 +3546,93 @@ export default function BudgetSystem() {
                 ))}
               </div>
               <button onClick={addHabit} className="w-full py-2 bg-blue-500 text-white rounded-lg font-medium">Добавить</button>
+            </div>
+          </div>
+        )}
+
+        {/* Edit Habit Modal */}
+        {editingHabit && (
+          <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
+            <div className="bg-white rounded-2xl w-full max-w-sm p-4 max-h-[90vh] overflow-y-auto">
+              <div className="flex justify-between mb-4">
+                <h2 className="text-lg font-semibold">Редактировать привычку</h2>
+                <button onClick={() => setEditingHabit(null)}><X size={20} className="text-neutral-400" /></button>
+              </div>
+              
+              <input 
+                value={editingHabit.name} 
+                onChange={e => setEditingHabit({ ...editingHabit, name: e.target.value })} 
+                placeholder="Название" 
+                className="w-full px-3 py-2 rounded-lg border mb-3" 
+              />
+              
+              <div className="text-sm text-neutral-500 mb-2">Курс (дней, пусто = бессрочно)</div>
+              <input
+                type="number"
+                value={editingHabit.courseDays || ''}
+                onChange={e => setEditingHabit({ ...editingHabit, courseDays: e.target.value ? parseInt(e.target.value) : null })}
+                placeholder="∞"
+                className="w-full px-3 py-2 rounded-lg border text-sm mb-3"
+              />
+              
+              <div className="text-sm text-neutral-500 mb-2">Время приёма</div>
+              <div className="flex flex-wrap gap-2 mb-2">
+                {(editingHabit.times || []).map((time, idx) => (
+                  <div key={idx} className="flex items-center gap-1 bg-blue-100 text-blue-700 px-2 py-1 rounded-lg text-sm">
+                    <input
+                      type="text"
+                      value={time}
+                      onChange={e => {
+                        const newTimes = [...(editingHabit.times || [])];
+                        newTimes[idx] = e.target.value;
+                        setEditingHabit({ ...editingHabit, times: newTimes });
+                      }}
+                      placeholder="утром"
+                      className="bg-transparent border-none text-sm w-20 outline-none"
+                    />
+                    <button 
+                      onClick={() => setEditingHabit({ ...editingHabit, times: (editingHabit.times || []).filter((_, i) => i !== idx) })}
+                      className="text-blue-400 hover:text-blue-600"
+                    >
+                      <X size={14} />
+                    </button>
+                  </div>
+                ))}
+              </div>
+              <button 
+                onClick={() => setEditingHabit({ ...editingHabit, times: [...(editingHabit.times || []), ''] })}
+                className="text-sm text-blue-500 hover:text-blue-600 mb-3 flex items-center gap-1"
+              >
+                <Plus size={14} /> Добавить время
+              </button>
+              
+              <div className="text-sm text-neutral-500 mb-2">Группа</div>
+              <div className="flex flex-wrap gap-2 mb-4">
+                {(data.habitGroups || []).map(g => (
+                  <button 
+                    key={g.id} 
+                    onClick={() => setEditingHabit({ ...editingHabit, groupId: g.id })} 
+                    className={`px-3 py-1.5 rounded-lg text-sm ${editingHabit.groupId === g.id ? `${HABIT_COLORS[g.color].fill} text-white` : `${HABIT_COLORS[g.color].bg} ${HABIT_COLORS[g.color].text}`}`}
+                  >
+                    {g.name}
+                  </button>
+                ))}
+              </div>
+              
+              <button 
+                onClick={() => {
+                  updateHabit(editingHabit.id, { 
+                    name: editingHabit.name, 
+                    courseDays: editingHabit.courseDays, 
+                    times: editingHabit.times,
+                    groupId: editingHabit.groupId
+                  });
+                  setEditingHabit(null);
+                }} 
+                className="w-full py-2 bg-blue-500 text-white rounded-lg font-medium"
+              >
+                Сохранить
+              </button>
             </div>
           </div>
         )}
