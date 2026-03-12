@@ -950,6 +950,28 @@ export default function BudgetSystem() {
     );
     save(newData);
   };
+
+  const toggleTaskComplete = (taskId) => {
+    const newData = { ...data };
+    newData.calendarTasks = (newData.calendarTasks || []).map(t => 
+      t.id === taskId ? { ...t, completed: !t.completed } : t
+    );
+    save(newData);
+  };
+
+  // Получить просроченные задачи
+  const getOverdueTasks = () => {
+    const now = new Date();
+    const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+    const currentTime = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+    
+    return (data?.calendarTasks || []).filter(task => {
+      if (task.completed) return false;
+      if (task.date < todayStr) return true;
+      if (task.date === todayStr && task.endTime < currentTime) return true;
+      return false;
+    });
+  };
   
   const removeCalendarTask = (taskId) => {
     const newData = { ...data, calendarTasks: (data.calendarTasks || []).filter(t => t.id !== taskId) };
@@ -1858,6 +1880,46 @@ export default function BudgetSystem() {
                 <span className="font-medium text-xs">Все события</span>
                 <span className="ml-auto text-[10px] text-neutral-400">{(data?.calendarTasks || []).length}</span>
               </button>
+              
+              {/* Overdue Tasks */}
+              {getOverdueTasks().length > 0 && (
+                <div className="mb-3">
+                  <button
+                    onClick={() => setSelectedProject('overdue')}
+                    className={`w-full flex items-center gap-2 px-2 py-1.5 rounded-lg text-sm transition-colors ${
+                      selectedProject === 'overdue' ? 'bg-red-50 text-red-600' : 'text-red-500 hover:bg-red-50'
+                    }`}
+                  >
+                    <div className="relative">
+                      <Clock size={14} />
+                      <div className="absolute -top-1 -right-1 w-2 h-2 bg-red-500 rounded-full animate-pulse" />
+                    </div>
+                    <span className="font-medium text-xs">Просроченные</span>
+                    <span className="ml-auto text-[10px] bg-red-100 text-red-600 px-1.5 py-0.5 rounded-full font-semibold">
+                      {getOverdueTasks().length}
+                    </span>
+                  </button>
+                  <div className="mt-1 space-y-1">
+                    {getOverdueTasks().slice(0, 3).map(task => (
+                      <div 
+                        key={task.id}
+                        onClick={() => setEditingTask(task)}
+                        className="flex items-center gap-2 px-2 py-1 rounded text-xs text-red-600 bg-red-50 cursor-pointer hover:bg-red-100"
+                      >
+                        <button
+                          onClick={(e) => { e.stopPropagation(); toggleTaskComplete(task.id); }}
+                          className="w-3 h-3 rounded border border-red-300 hover:bg-red-200 flex-shrink-0"
+                        />
+                        <span className="truncate">{task.title}</span>
+                        <span className="ml-auto text-[9px] text-red-400">{task.date.slice(5)}</span>
+                      </div>
+                    ))}
+                    {getOverdueTasks().length > 3 && (
+                      <div className="text-[10px] text-red-400 px-2">+{getOverdueTasks().length - 3} ещё</div>
+                    )}
+                  </div>
+                </div>
+              )}
               
               {/* Projects Section */}
               <div className="mb-3">
@@ -3173,11 +3235,15 @@ export default function BudgetSystem() {
                                   return (
                                     <div
                                       key={task.id}
-                                      draggable
-                                      onDragStart={(e) => handleDragStart(e, 'task', task)}
+                                      draggable={!task.completed}
+                                      onDragStart={(e) => !task.completed && handleDragStart(e, 'task', task)}
                                       onDragEnd={handleDragEnd}
                                       onClick={(e) => { e.stopPropagation(); setEditingTask(task); }}
-                                      className={`absolute left-0.5 right-0.5 px-1.5 py-0.5 rounded ${TASK_COLORS[task.color]?.bg || 'bg-blue-500'} text-white text-[11px] cursor-grab active:cursor-grabbing hover:brightness-110 transition-all shadow-sm group z-10 select-none ${
+                                      className={`absolute left-0.5 right-0.5 px-1.5 py-0.5 rounded text-white text-[11px] cursor-pointer hover:brightness-110 transition-all shadow-sm group z-10 select-none ${
+                                        task.completed 
+                                          ? 'bg-neutral-400 opacity-60' 
+                                          : `${TASK_COLORS[task.color]?.bg || 'bg-blue-500'} cursor-grab active:cursor-grabbing`
+                                      } ${
                                         isDragging ? 'opacity-50' : ''
                                       } ${
                                         resizingTask?.id === task.id ? 'ring-2 ring-white cursor-ns-resize' : ''
@@ -3188,8 +3254,18 @@ export default function BudgetSystem() {
                                       }}
                                     >
                                       <div className="flex items-center gap-1 overflow-hidden">
+                                        <button
+                                          onClick={(e) => { e.stopPropagation(); toggleTaskComplete(task.id); }}
+                                          className={`w-3.5 h-3.5 rounded border flex-shrink-0 flex items-center justify-center ${
+                                            task.completed 
+                                              ? 'bg-white/80 border-white/80' 
+                                              : 'border-white/60 hover:bg-white/20'
+                                          }`}
+                                        >
+                                          {task.completed && <Check size={10} className="text-neutral-500" />}
+                                        </button>
                                         <TypeIcon size={10} className="flex-shrink-0" />
-                                        <span className="font-medium truncate">{task.title}</span>
+                                        <span className={`font-medium truncate ${task.completed ? 'line-through opacity-80' : ''}`}>{task.title}</span>
                                       </div>
                                       {(task.duration || 60) >= 30 && (
                                         <div className="text-white/80 text-[9px]">
@@ -3197,12 +3273,14 @@ export default function BudgetSystem() {
                                         </div>
                                       )}
                                       {/* Resize handle */}
-                                      <div
-                                        onMouseDown={(e) => handleResizeStart(e, task)}
-                                        className="absolute bottom-0 left-0 right-0 h-3 cursor-ns-resize hover:bg-white/30 rounded-b opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center"
-                                      >
-                                        <div className="w-8 h-1 bg-white/60 rounded-full" />
-                                      </div>
+                                      {!task.completed && (
+                                        <div
+                                          onMouseDown={(e) => handleResizeStart(e, task)}
+                                          className="absolute bottom-0 left-0 right-0 h-3 cursor-ns-resize hover:bg-white/30 rounded-b opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center"
+                                        >
+                                          <div className="w-8 h-1 bg-white/60 rounded-full" />
+                                        </div>
+                                      )}
                                     </div>
                                   );
                                 })}
@@ -3283,12 +3361,24 @@ export default function BudgetSystem() {
                             return (
                               <div
                                 key={task.id}
-                                draggable
-                                onDragStart={(e) => { e.stopPropagation(); handleTaskDragStart(e, task); }}
+                                draggable={!task.completed}
+                                onDragStart={(e) => { e.stopPropagation(); !task.completed && handleTaskDragStart(e, task); }}
                                 onDragEnd={() => setDraggedTask(null)}
                                 onClick={(e) => { e.stopPropagation(); setEditingTask(task); }}
-                                className={`px-1 py-0.5 rounded text-[10px] ${TASK_COLORS[task.color]?.light || 'bg-blue-100'} ${TASK_COLORS[task.color]?.text || 'text-blue-600'} truncate flex items-center gap-0.5 cursor-grab`}
+                                className={`px-1 py-0.5 rounded text-[10px] truncate flex items-center gap-0.5 ${
+                                  task.completed 
+                                    ? 'bg-neutral-100 text-neutral-400 line-through' 
+                                    : `${TASK_COLORS[task.color]?.light || 'bg-blue-100'} ${TASK_COLORS[task.color]?.text || 'text-blue-600'} cursor-grab`
+                                }`}
                               >
+                                <button
+                                  onClick={(e) => { e.stopPropagation(); toggleTaskComplete(task.id); }}
+                                  className={`w-2.5 h-2.5 rounded border flex-shrink-0 flex items-center justify-center ${
+                                    task.completed ? 'bg-neutral-300 border-neutral-300' : 'border-current'
+                                  }`}
+                                >
+                                  {task.completed && <Check size={6} />}
+                                </button>
                                 <TypeIcon size={8} />
                                 <span className="truncate">{task.title}</span>
                               </div>
@@ -3408,13 +3498,27 @@ export default function BudgetSystem() {
                               <div
                                 key={task.id}
                                 onClick={(e) => { e.stopPropagation(); setEditingTask(task); }}
-                                className={`${TASK_COLORS[task.color]?.light || 'bg-blue-100'} border-l-4 ${TASK_COLORS[task.color]?.border || 'border-blue-500'} rounded-r-lg p-3 mb-2 cursor-pointer hover:shadow-md transition-shadow`}
+                                className={`border-l-4 rounded-r-lg p-3 mb-2 cursor-pointer hover:shadow-md transition-shadow ${
+                                  task.completed 
+                                    ? 'bg-neutral-100 border-neutral-300 opacity-60' 
+                                    : `${TASK_COLORS[task.color]?.light || 'bg-blue-100'} ${TASK_COLORS[task.color]?.border || 'border-blue-500'}`
+                                }`}
                               >
                                 <div className="flex items-center justify-between">
                                   <div className="flex items-center gap-2">
-                                    <TypeIcon size={16} className={TASK_COLORS[task.color]?.text || 'text-blue-600'} />
-                                    <span className={`font-medium ${TASK_COLORS[task.color]?.text || 'text-blue-600'}`}>{task.title}</span>
-                                    <span className={`text-xs px-2 py-0.5 rounded-full ${TASK_TYPES[task.type]?.color || 'text-blue-500'} bg-white`}>
+                                    <button
+                                      onClick={(e) => { e.stopPropagation(); toggleTaskComplete(task.id); }}
+                                      className={`w-5 h-5 rounded border-2 flex items-center justify-center flex-shrink-0 ${
+                                        task.completed 
+                                          ? 'bg-neutral-400 border-neutral-400 text-white' 
+                                          : `${TASK_COLORS[task.color]?.border || 'border-blue-500'} hover:bg-neutral-100`
+                                      }`}
+                                    >
+                                      {task.completed && <Check size={12} />}
+                                    </button>
+                                    <TypeIcon size={16} className={task.completed ? 'text-neutral-400' : TASK_COLORS[task.color]?.text || 'text-blue-600'} />
+                                    <span className={`font-medium ${task.completed ? 'text-neutral-400 line-through' : TASK_COLORS[task.color]?.text || 'text-blue-600'}`}>{task.title}</span>
+                                    <span className={`text-xs px-2 py-0.5 rounded-full bg-white ${task.completed ? 'text-neutral-400' : TASK_TYPES[task.type]?.color || 'text-blue-500'}`}>
                                       {TASK_TYPES[task.type]?.label || 'Задача'}
                                     </span>
                                   </div>
